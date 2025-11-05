@@ -1,14 +1,31 @@
-FROM python:3.10.4-slim-buster
-RUN apt update && apt upgrade -y
-RUN apt-get install git curl python3-pip ffmpeg -y
-RUN apt-get -y install git
-RUN apt-get install -y wget python3-pip curl bash neofetch ffmpeg software-properties-common
-COPY requirements.txt .
+FROM python:3.10-slim-bullseye
 
+
+# ধাপ ২: সব সিস্টেম প্যাকেজ একটি RUN লেয়ারে ইনস্টল করুন
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    python3-pip \
+    ffmpeg \
+    wget \
+    bash \
+    neofetch \
+    software-properties-common \
+    --no-install-recommends \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# ধাপ ৩: পাইথন প্যাকেজ ইনস্টল করুন
 RUN pip3 install wheel
+COPY requirements.txt .
 RUN pip3 install --no-cache-dir -U -r requirements.txt
+
+# ধাপ ৪: আপনার অ্যাপ কোড কপি করুন
 WORKDIR /app
 COPY . .
 
-CMD flask run -h 0.0.0.0 -p 8000 & python3 -m safe_repo
+# ধাপ ৫: Flask অ্যাপের প্রধান ফাইল সেট করুন (প্রয়োজনে পরিবর্তন করুন)
+ENV FLASK_APP=app.py
 
+# ধাপ ৬: আপনার দুটি কমান্ড একসাথে চালান (Render-এর জন্য)
+CMD python3 -m safe_repo & flask run --host=0.0.0.0 --port=$PORT
