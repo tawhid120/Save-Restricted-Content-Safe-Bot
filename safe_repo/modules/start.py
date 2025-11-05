@@ -12,7 +12,7 @@ FORCE_SUB_USERNAME = os.environ.get("FORCE_SUB")
 if FORCE_SUB_USERNAME:
     channel_url = f"https://t.me/{FORCE_SUB_USERNAME}"
 else:
-    channel_url = "https://t.me/safe_repo"
+    channel_url = "https://t.me/RealOnlineIncomeEarningFreelance"
     
 buttons = InlineKeyboardMarkup(
     [
