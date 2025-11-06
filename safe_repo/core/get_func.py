@@ -17,6 +17,7 @@ from pyrogram.types import Message
 from config import MONGO_DB as MONGODB_CONNECTION_STRING, LOG_GROUP
 import cv2
 from telethon import events, Button
+import re # <-- এই লাইনটি যোগ করা হয়েছে, কারণ এটি নিচের ফাংশনে ব্যবহৃত হয়েছে
     
 
 
@@ -24,6 +25,7 @@ from telethon import events, Button
 def thumbnail(sender):
     return f'{sender}.jpg' if os.path.exists(f'{sender}.jpg') else None
 
+# --- এই ফাংশনটি সম্পূর্ণ সংশোধন করা হয়েছে ---
 async def get_msg(userbot, sender, edit_id, msg_link, i, message):
     edit = ""
     chat = ""
@@ -42,7 +44,7 @@ async def get_msg(userbot, sender, edit_id, msg_link, i, message):
         try:
             chatx = message.chat.id
             msg = await userbot.get_messages(chat, msg_id)
-            caption = None
+            caption = None # <-- প্রথমে None হিসেবে শুরু করি
 
             if msg.service is not None:
                 return None 
@@ -113,21 +115,13 @@ async def get_msg(userbot, sender, edit_id, msg_link, i, message):
             
             if msg.media == MessageMediaType.VIDEO and msg.video.mime_type in ["video/mp4", "video/x-matroska"]:
 
+                # --- সংশোধিত লজিক শুরু ---
+                # ধাপ ১: মেটাডেটা, ক্যাপশন এবং থাম্বনেইল আগে প্রসেস করুন
+                
                 metadata = video_metadata(file)      
-                width= metadata['width']
-                height= metadata['height']
-                duration= metadata['duration']
-
-                if duration <= 300:
-                    safe_repo = await app.send_video(chat_id=sender, video=file, caption=caption, height=height, width=width, duration=duration, thumb=None, progress=progress_bar, progress_args=('**UPLOADING:**\n', edit, time.time())) 
-                    if msg.pinned_message:
-                        try:
-                            await safe_repo.pin(both_sides=True)
-                        except Exception as e:
-                            await safe_repo.pin()
-                    await safe_repo.copy(LOG_GROUP)
-                    await edit.delete()
-                    return
+                width = metadata['width']
+                height = metadata['height']
+                duration = metadata['duration']
                 
                 delete_words = load_delete_words(sender)
                 custom_caption = get_user_caption_preference(sender)
@@ -144,11 +138,46 @@ async def get_msg(userbot, sender, edit_id, msg_link, i, message):
                 replacements = load_replacement_words(sender)
                 for word, replace_word in replacements.items():
                     final_caption = final_caption.replace(word, replace_word)
+                
+                # 'caption' ভেরিয়েবলটি এখন প্রস্তুত
                 caption = f"{final_caption}\n\n__**{custom_caption}**__" if custom_caption else f"{final_caption}"
 
                 target_chat_id = user_chat_ids.get(chatx, chatx)
                 
+                # 'thumb_path' ভেরিয়েবলটি এখন প্রস্তুত
                 thumb_path = await screenshot(file, duration, chatx)              
+                # --- সংশোধিত লজিক শেষ ---
+
+
+                if duration <= 300: # <-- এখন এই চেকটি সব ডেটা প্রস্তুত হওয়ার পর হচ্ছে
+                    safe_repo = await app.send_video(
+                        chat_id=target_chat_id, # <-- 'sender' এর বদলে 'target_chat_id' ব্যবহার করা হয়েছে
+                        video=file, 
+                        caption=caption, # <-- প্রস্তুত করা 'caption' ব্যবহার করা হয়েছে
+                        height=height, 
+                        width=width, 
+                        duration=duration, 
+                        thumb=thumb_path, # <-- 'None' এর বদলে 'thumb_path' ব্যবহার করা হয়েছে
+                        progress=progress_bar, 
+                        progress_args=('**UPLOADING:**\n', edit, time.time())
+                    ) 
+                    if msg.pinned_message:
+                        try:
+                            await safe_repo.pin(both_sides=True)
+                        except Exception as e:
+                            await safe_repo.pin()
+                    await safe_repo.copy(LOG_GROUP)
+                    await edit.delete()
+                    
+                    # ফাইল ডিলিট করার লজিক যোগ করা হয়েছে
+                    if os.path.exists(file):
+                        os.remove(file)
+                    if thumb_path and os.path.exists(thumb_path):
+                        os.remove(thumb_path)
+                        
+                    return # <-- ফাংশন থেকে বের হয়ে যান
+                
+                # ৫ মিনিটের বড় ভিডিওর জন্য কোড (এটি এখন ঠিক আছে)
                 try:
                     safe_repo = await app.send_video(
                         chat_id=target_chat_id,
@@ -158,7 +187,7 @@ async def get_msg(userbot, sender, edit_id, msg_link, i, message):
                         height=height,
                         width=width,
                         duration=duration,
-                        thumb=thumb_path,
+                        thumb=thumb_path, # <-- এখানেও এখন 'thumb_path' ব্যবহৃত হচ্ছে
                         progress=progress_bar,
                         progress_args=(
                         '**__Uploading...__**\n',
@@ -175,7 +204,11 @@ async def get_msg(userbot, sender, edit_id, msg_link, i, message):
                 except:
                     await app.edit_message_text(sender, edit_id, "The bot is not an admin in the specified chat...")
 
-                os.remove(file)
+                # ফাইল ডিলিট করার লজিক
+                if os.path.exists(file):
+                    os.remove(file)
+                if thumb_path and os.path.exists(thumb_path):
+                    os.remove(thumb_path)
                     
             elif msg.media == MessageMediaType.PHOTO:
                 await edit.edit("**`Uploading photo...`")
@@ -204,8 +237,12 @@ async def get_msg(userbot, sender, edit_id, msg_link, i, message):
                     except Exception as e:
                         await safe_repo.pin()                
                 await safe_repo.copy(LOG_GROUP)
+                
+                if os.path.exists(file):
+                    os.remove(file) # <-- ফটো পাঠানোর পরও ফাইল ডিলিট করা
+                        
             else:
-                thumb_path = thumbnail(chatx)
+                thumb_path = thumbnail(chatx) # <-- এটি আপনার কাস্টম থাম্ব ফাংশন (যদি থাকে)
                 delete_words = load_delete_words(sender)
                 custom_caption = get_user_caption_preference(sender)
                 original_caption = msg.caption if msg.caption else ''
@@ -247,7 +284,10 @@ async def get_msg(userbot, sender, edit_id, msg_link, i, message):
                 except:
                     await app.edit_message_text(sender, edit_id, "The bot is not an admin in the specified chat.") 
                 
-                os.remove(file)
+                if os.path.exists(file):
+                    os.remove(file)
+                if thumb_path and os.path.exists(thumb_path): # <-- এখানেও থাম্বনেইল ক্লিপআপ যোগ করা হয়েছে
+                    os.remove(thumb_path)
                         
             await edit.delete()
         
@@ -266,7 +306,7 @@ async def get_msg(userbot, sender, edit_id, msg_link, i, message):
         except Exception as e:
             await app.edit_message_text(sender, edit_id, f'Failed to save: `{msg_link}`\n\nError: {str(e)}')
 
-
+# --- এই ফাংশনটি অপরিবর্তিত আছে ---
 async def copy_message_with_chat_id(client, sender, chat_id, message_id):
     # Get the user's set chat ID, if available; otherwise, use the original sender ID
     target_chat_id = user_chat_ids.get(sender, sender)
@@ -321,9 +361,9 @@ async def copy_message_with_chat_id(client, sender, chat_id, message_id):
         await client.send_message(sender, error_message)
         await client.send_message(sender, f"Make Bot admin in your Channel - {target_chat_id} and restart the process after /cancel")
 
-# -------------- FFMPEG CODES ---------------
+# -------------- FFMPEG CODES --------------- (অপরিবর্তিত)
 
-# ------------------------ Button Mode Editz FOR SETTINGS ----------------------------
+# ------------------------ Button Mode Editz FOR SETTINGS ---------------------------- (অপরিবর্তিত)
 
 # MongoDB database name and collection name
 DB_NAME = "smart_users"
