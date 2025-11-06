@@ -9,8 +9,7 @@ from safe_repo import app
 from safe_repo import sex as gf
 import pymongo
 from pyrogram import filters
-# MessageIdInvalid যোগ করা হয়েছে টপিক ও ডিলিট মেসেজের এরর ধরার জন্য
-from pyrogram.errors import ChannelBanned, ChannelInvalid, ChannelPrivate, ChatIdInvalid, ChatInvalid, PeerIdInvalid, MessageIdInvalid
+from pyrogram.errors import ChannelBanned, ChannelInvalid, ChannelPrivate, ChatIdInvalid, ChatInvalid, PeerIdInvalid
 from pyrogram.enums import MessageMediaType
 from safe_repo.core.func import progress_bar, video_metadata, screenshot
 from safe_repo.core.mongo import db
@@ -18,7 +17,6 @@ from pyrogram.types import Message
 from config import MONGO_DB as MONGODB_CONNECTION_STRING, LOG_GROUP
 import cv2
 from telethon import events, Button
-import re # <-- এই লাইনটি যোগ করা হয়েছে, কারণ এটি নিচের ফাংশনে ব্যবহৃত হয়েছে
     
 
 
@@ -26,71 +24,31 @@ import re # <-- এই লাইনটি যোগ করা হয়েছে, �
 def thumbnail(sender):
     return f'{sender}.jpg' if os.path.exists(f'{sender}.jpg') else None
 
-# --- এই ফাংশনটি টপিক, কোট, এবং থাম্বনেইল সমস্যার জন্য সম্পূর্ণ পুনর্গঠন করা হয়েছে ---
 async def get_msg(userbot, sender, edit_id, msg_link, i, message):
     edit = ""
     chat = ""
     round_message = False
-    
     if "?single" in msg_link:
         msg_link = msg_link.split("?single")[0]
+    msg_id = int(msg_link.split("/")[-1]) + int(i)
 
-    # --- সমাধান ১: টপিক গ্রুপের লিংক পার্সিং ---
-    link_parts = msg_link.split("/")
-    msg_id = int(link_parts[-1]) + int(i)
-    topic_id = None
     
     if 't.me/c/' in msg_link or 't.me/b/' in msg_link:
-        try:
-            chat = int('-100' + str(link_parts[3])) # Chat ID সব সময় ইনডেক্স ৩-এ থাকে
-            if len(link_parts) == 6: # এটি টপিক লিংক: t.me/c/CHAT/TOPIC/MSG
-                topic_id = int(link_parts[4])
-        except ValueError:
-            await app.edit_message_text(sender, edit_id, "Error: Invalid link format.")
-            return
-
+        if 't.me/b/' not in msg_link:
+            chat = int('-100' + str(msg_link.split("/")[-2]))
+        else:
+            chat = msg_link.split("/")[-2]       
         file = ""
         try:
             chatx = message.chat.id
-            
-            # টপিক আইডি থাকলে সেটি ব্যবহার করে মেসেজ ফেচ করা
-            if topic_id:
-                msg = await userbot.get_messages(chat, msg_id, message_thread_id=topic_id)
-            else:
-                msg = await userbot.get_messages(chat, msg_id)
+            msg = await userbot.get_messages(chat, msg_id)
+            caption = None
 
             if msg.service is not None:
-                await app.edit_message_text(sender, edit_id, "This is a service message, cannot save.")
                 return None 
             if msg.empty is not None:
-                await app.edit_message_text(sender, edit_id, "This message is empty (maybe deleted).")
                 return None                          
-
-            # --- সমাধান ২: কোট/রিপ্লাই এরর (মিডিয়া চেক) ---
-
-            # ক. যদি মেসেজে মিডিয়া *না* থাকে (যেমন শুধু টেক্সট, কোট, বা রিপ্লাই)
-            if not msg.media:
-                if msg.text:
-                    target_chat_id = user_chat_ids.get(chatx, chatx)
-                    edit = await app.edit_message_text(target_chat_id, edit_id, "Cloning Text...")
-                    safe_repo = await app.send_message(sender, msg.text.markdown)
-                    if msg.pinned_message:
-                        try:
-                            await safe_repo.pin(both_sides=True)
-                        except Exception as e:
-                            await safe_repo.pin()
-                    await safe_repo.copy(LOG_GROUP)
-                    await edit.delete()
-                    return
-                else:
-                    # যদি মিডিয়াও না থাকে, টেক্সটও না থাকে (যেমন একটি "কোট" মেসেজ)
-                    await app.edit_message_text(sender, edit_id, "Error: This message doesn't contain downloadable media or text.")
-                    return
-
-            # খ. যদি মেসেজে মিডিয়া *থাকে* (মূল লজিক)
             if msg.media:
-                
-                # ওয়েবপেজ মিডিয়া (আলাদাভাবে হ্যান্ডেল করা)
                 if msg.media == MessageMediaType.WEB_PAGE:
                     target_chat_id = user_chat_ids.get(chatx, chatx)
                     edit = await app.edit_message_text(target_chat_id, edit_id, "Cloning...")
@@ -103,47 +61,74 @@ async def get_msg(userbot, sender, edit_id, msg_link, i, message):
                     await safe_repo.copy(LOG_GROUP)                  
                     await edit.delete()
                     return
-                
-                # --- ফাইল ডাউনলোড ও রিনেম লজিক (অপরিবর্তিত) ---
-                edit = await app.edit_message_text(sender, edit_id, "Trying to Download...")
-                file = await userbot.download_media(
-                    msg,
-                    progress=progress_bar,
-                    progress_args=("**__Downloading: __**\n",edit,time.time()))
-                
-                custom_rename_tag = get_user_rename_preference(chatx)
-                last_dot_index = str(file).rfind('.')
-                if last_dot_index != -1 and last_dot_index != 0:
-                    safe_repo_ext = str(file)[last_dot_index + 1:]
-                    if safe_repo_ext.isalpha() and len(safe_repo_ext) <= 4:
-                        if safe_repo_ext.lower() == 'mov':
-                            original_file_name = str(file)[:last_dot_index]
-                            file_extension = 'mp4'
-                        else:
-                            original_file_name = str(file)[:last_dot_index]
-                            file_extension = safe_repo_ext
-                    else:
-                        original_file_name = str(file)
+            if not msg.media:
+                if msg.text:
+                    target_chat_id = user_chat_ids.get(chatx, chatx)
+                    edit = await app.edit_message_text(target_chat_id, edit_id, "Cloning...")
+                    safe_repo = await app.send_message(sender, msg.text.markdown)
+                    if msg.pinned_message:
+                        try:
+                            await safe_repo.pin(both_sides=True)
+                        except Exception as e:
+                            await safe_repo.pin()
+                    await safe_repo.copy(LOG_GROUP)
+                    await edit.delete()
+                    return
+            
+            edit = await app.edit_message_text(sender, edit_id, "Trying to Download...")
+            file = await userbot.download_media(
+                msg,
+                progress=progress_bar,
+                progress_args=("**__Downloading: __**\n",edit,time.time()))
+            
+            custom_rename_tag = get_user_rename_preference(chatx)
+            last_dot_index = str(file).rfind('.')
+            if last_dot_index != -1 and last_dot_index != 0:
+                safe_repo_ext = str(file)[last_dot_index + 1:]
+                if safe_repo_ext.isalpha() and len(safe_repo_ext) <= 4:
+                    if safe_repo_ext.lower() == 'mov':
+                        original_file_name = str(file)[:last_dot_index]
                         file_extension = 'mp4'
+                    else:
+                        original_file_name = str(file)[:last_dot_index]
+                        file_extension = safe_repo_ext
                 else:
                     original_file_name = str(file)
                     file_extension = 'mp4'
+            else:
+                original_file_name = str(file)
+                file_extension = 'mp4'
 
-                delete_words_filename = load_delete_words(chatx) # ফাইলনেমের জন্য লোড করা
-                for word in delete_words_filename:
-                    original_file_name = original_file_name.replace(word, "")
+            delete_words = load_delete_words(chatx)
+            for word in delete_words:
+                original_file_name = original_file_name.replace(word, "")
+            video_file_name = original_file_name + " " + custom_rename_tag    
+            new_file_name = original_file_name + " " + custom_rename_tag + "." + file_extension
+            os.rename(file, new_file_name)
+            file = new_file_name
+
+            # CODES are hidden             
+
+            await edit.edit('Trying to Uplaod ...')
+            
+            if msg.media == MessageMediaType.VIDEO and msg.video.mime_type in ["video/mp4", "video/x-matroska"]:
+
+                metadata = video_metadata(file)      
+                width= metadata['width']
+                height= metadata['height']
+                duration= metadata['duration']
+
+                if duration <= 300:
+                    safe_repo = await app.send_video(chat_id=sender, video=file, caption=caption, height=height, width=width, duration=duration, thumb=None, progress=progress_bar, progress_args=('**UPLOADING:**\n', edit, time.time())) 
+                    if msg.pinned_message:
+                        try:
+                            await safe_repo.pin(both_sides=True)
+                        except Exception as e:
+                            await safe_repo.pin()
+                    await safe_repo.copy(LOG_GROUP)
+                    await edit.delete()
+                    return
                 
-                video_file_name = original_file_name + " " + custom_rename_tag    
-                new_file_name = original_file_name + " " + custom_rename_tag + "." + file_extension
-                os.rename(file, new_file_name)
-                file = new_file_name
-                
-                await edit.edit('Trying to Uplaod ...')
-                # --- ফাইল ডাউনলোড ও রিনেম লজিক শেষ ---
-                
-                
-                # --- ক্যাপশন প্রসেসিং লজিক (অপরিবর্তিত) ---
-                # এই লজিকটি সব মিডিয়া টাইপের জন্য কমন
                 delete_words = load_delete_words(sender)
                 custom_caption = get_user_caption_preference(sender)
                 original_caption = msg.caption if msg.caption else ''
@@ -152,7 +137,7 @@ async def get_msg(userbot, sender, edit_id, msg_link, i, message):
                 processed_lines = []
                 for line in lines:
                     for word in delete_words:
-                        line = line.replace(word, '') # এটি Blockquote ফরম্যাটিং নষ্ট করতে পারে, কিন্তু আপনার লজিক অনুযায়ী এটি রাখা হয়েছে
+                        line = line.replace(word, '')
                     if line.strip():
                         processed_lines.append(line.strip())
                 final_caption = '\n'.join(processed_lines)
@@ -160,71 +145,86 @@ async def get_msg(userbot, sender, edit_id, msg_link, i, message):
                 for word, replace_word in replacements.items():
                     final_caption = final_caption.replace(word, replace_word)
                 caption = f"{final_caption}\n\n__**{custom_caption}**__" if custom_caption else f"{final_caption}"
+
                 target_chat_id = user_chat_ids.get(chatx, chatx)
-                # --- ক্যাপশন প্রসেসিং লজিক শেষ ---
-
-
-                if msg.media == MessageMediaType.VIDEO:
-                    
-                    # --- সমাধান ৩: থাম্বনেইল লজিক ঠিক করা ---
-                    metadata = video_metadata(file)      
-                    width = metadata['width']
-                    height = metadata['height']
-                    duration = metadata['duration']
-                    thumb_path = await screenshot(file, duration, chatx) # থাম্বনেইল আগে তৈরি করা
-
-                    if duration <= 300: # ছোট ভিডিও
-                        safe_repo = await app.send_video(
-                            chat_id=target_chat_id,
-                            video=file, 
-                            caption=caption, # প্রস্তুত করা ক্যাপশন
-                            height=height, 
-                            width=width, 
-                            duration=duration, 
-                            thumb=thumb_path, # প্রস্তুত করা থাম্বনেইল
-                            progress=progress_bar, 
-                            progress_args=('**UPLOADING:**\n', edit, time.time())
-                        ) 
-                    else: # বড় ভিডিও
-                        safe_repo = await app.send_video(
-                            chat_id=target_chat_id,
-                            video=file,
-                            caption=caption,
-                            supports_streaming=True,
-                            height=height,
-                            width=width,
-                            duration=duration,
-                            thumb=thumb_path,
-                            progress=progress_bar,
-                            progress_args=(
-                            '**__Uploading...__**\n',
-                            edit,
-                            time.time()
-                            )
+                
+                thumb_path = await screenshot(file, duration, chatx)              
+                try:
+                    safe_repo = await app.send_video(
+                        chat_id=target_chat_id,
+                        video=file,
+                        caption=caption,
+                        supports_streaming=True,
+                        height=height,
+                        width=width,
+                        duration=duration,
+                        thumb=thumb_path,
+                        progress=progress_bar,
+                        progress_args=(
+                        '**__Uploading...__**\n',
+                        edit,
+                        time.time()
                         )
-                    
+                       )
                     if msg.pinned_message:
                         try:
                             await safe_repo.pin(both_sides=True)
                         except Exception as e:
                             await safe_repo.pin()
                     await safe_repo.copy(LOG_GROUP)
+                except:
+                    await app.edit_message_text(sender, edit_id, "The bot is not an admin in the specified chat...")
+
+                os.remove(file)
                     
-                    if os.path.exists(file): os.remove(file)
-                    if thumb_path and os.path.exists(thumb_path): os.remove(thumb_path)
-                    
-                elif msg.media == MessageMediaType.PHOTO:
-                    safe_repo = await app.send_photo(chat_id=target_chat_id, photo=file, caption=caption)
-                    if msg.pinned_message:
-                        try:
-                            await safe_repo.pin(both_sides=True)
-                        except Exception as e:
-                            await safe_repo.pin()                
-                    await safe_repo.copy(LOG_GROUP)
-                    if os.path.exists(file): os.remove(file)
-                
-                else: # ডকুমেন্ট, অডিও বা অন্যান্য
-                    thumb_path = thumbnail(chatx) 
+            elif msg.media == MessageMediaType.PHOTO:
+                await edit.edit("**`Uploading photo...`")
+                delete_words = load_delete_words(sender)
+                custom_caption = get_user_caption_preference(sender)
+                original_caption = msg.caption if msg.caption else ''
+                final_caption = f"{original_caption}" if custom_caption else f"{original_caption}"
+                lines = final_caption.split('\n')
+                processed_lines = []
+                for line in lines:
+                    for word in delete_words:
+                        line = line.replace(word, '')
+                    if line.strip():
+                        processed_lines.append(line.strip())
+                final_caption = '\n'.join(processed_lines)
+                replacements = load_replacement_words(sender)
+                for word, replace_word in replacements.items():
+                    final_caption = final_caption.replace(word, replace_word)
+                caption = f"{final_caption}\n\n__**{custom_caption}**__" if custom_caption else f"{final_caption}"
+
+                target_chat_id = user_chat_ids.get(sender, sender)
+                safe_repo = await app.send_photo(chat_id=target_chat_id, photo=file, caption=caption)
+                if msg.pinned_message:
+                    try:
+                        await safe_repo.pin(both_sides=True)
+                    except Exception as e:
+                        await safe_repo.pin()                
+                await safe_repo.copy(LOG_GROUP)
+            else:
+                thumb_path = thumbnail(chatx)
+                delete_words = load_delete_words(sender)
+                custom_caption = get_user_caption_preference(sender)
+                original_caption = msg.caption if msg.caption else ''
+                final_caption = f"{original_caption}" if custom_caption else f"{original_caption}"
+                lines = final_caption.split('\n')
+                processed_lines = []
+                for line in lines:
+                    for word in delete_words:
+                        line = line.replace(word, '')
+                    if line.strip():
+                        processed_lines.append(line.strip())
+                final_caption = '\n'.join(processed_lines)
+                replacements = load_replacement_words(chatx)
+                for word, replace_word in replacements.items():
+                    final_caption = final_caption.replace(word, replace_word)
+                caption = f"{final_caption}\n\n__**{custom_caption}**__" if custom_caption else f"{final_caption}"
+
+                target_chat_id = user_chat_ids.get(chatx, chatx)
+                try:
                     safe_repo = await app.send_document(
                         chat_id=target_chat_id,
                         document=file,
@@ -242,26 +242,22 @@ async def get_msg(userbot, sender, edit_id, msg_link, i, message):
                             await safe_repo.pin(both_sides=True)
                         except Exception as e:
                             await safe_repo.pin()
-                    await safe_repo.copy(LOG_GROUP)
-                    
-                    if os.path.exists(file): os.remove(file)
-                    if thumb_path and os.path.exists(thumb_path): os.remove(thumb_path)
-                        
-                await edit.delete()
 
+                    await safe_repo.copy(LOG_GROUP)
+                except:
+                    await app.edit_message_text(sender, edit_id, "The bot is not an admin in the specified chat.") 
+                
+                os.remove(file)
+                        
+            await edit.delete()
+        
         except (ChannelBanned, ChannelInvalid, ChannelPrivate, ChatIdInvalid, ChatInvalid):
-            await app.edit_message_text(sender, edit_id, "Bot is not in the channel or chat. Have you joined?")
-            return
-        except MessageIdInvalid:
-            # এই এররটি আসবে যদি মেসেজ আইডি ভুল হয় বা টপিক আইডি ভুল হয়
-            await app.edit_message_text(sender, edit_id, f"Failed to save: Invalid Message ID. Maybe the message was deleted or the Topic ID is wrong.")
+            await app.edit_message_text(sender, edit_id, "Have you joined the channel?")
             return
         except Exception as e:
-            # এই এররটিই আপনি পাচ্ছিলেন ("doesn't contain any downloadable media")
-            # যদিও আমরা এটি চেক করেছি, তবুও অন্য কোনো কারণে এটি আসতে পারে
             await app.edit_message_text(sender, edit_id, f'Failed to save: `{msg_link}`\n\nError: {str(e)}')       
         
-    else: # পাবলিক লিংক (যেমন t.me/channel/123)
+    else:
         edit = await app.edit_message_text(sender, edit_id, "Cloning...")
         try:
             chat = msg_link.split("/")[-2]
@@ -271,7 +267,6 @@ async def get_msg(userbot, sender, edit_id, msg_link, i, message):
             await app.edit_message_text(sender, edit_id, f'Failed to save: `{msg_link}`\n\nError: {str(e)}')
 
 
-# --- এই ফাংশনটি অপরিবর্তিত আছে ---
 async def copy_message_with_chat_id(client, sender, chat_id, message_id):
     # Get the user's set chat ID, if available; otherwise, use the original sender ID
     target_chat_id = user_chat_ids.get(sender, sender)
@@ -326,8 +321,9 @@ async def copy_message_with_chat_id(client, sender, chat_id, message_id):
         await client.send_message(sender, error_message)
         await client.send_message(sender, f"Make Bot admin in your Channel - {target_chat_id} and restart the process after /cancel")
 
-# -------------- FFMPEG CODES --------------- (অপরিবর্তিত)
-# ------------------------ Button Mode Editz FOR SETTINGS ---------------------------- (অপরিবর্তিত)
+# -------------- FFMPEG CODES ---------------
+
+# ------------------------ Button Mode Editz FOR SETTINGS ----------------------------
 
 # MongoDB database name and collection name
 DB_NAME = "smart_users"
@@ -488,7 +484,7 @@ async def callback_query_handler(event):
 
     elif event.data == b'setrename':
         await event.respond("Send me the rename tag:")
-        sessions[user_id] = 'setrename' # <-- এখানে একটি টাইপো ছিল (userid), আমি ঠিক করে দিয়েছি
+        sessions[user_id] = 'setrename'
 
     elif event.data == b'setcaption':
         await event.respond("Send me the caption:")
