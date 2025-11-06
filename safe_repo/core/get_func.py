@@ -17,52 +17,77 @@ from pyrogram.types import Message
 from config import MONGO_DB as MONGODB_CONNECTION_STRING, LOG_GROUP
 import cv2
 from telethon import events, Button
-import re # <-- এই লাইনটি যোগ করা হয়েছে, কারণ এটি নিচের ফাংশনে ব্যবহৃত হয়েছে
-    
-
-
+import re
 
 def thumbnail(sender):
     return f'{sender}.jpg' if os.path.exists(f'{sender}.jpg') else None
 
-# --- এই ফাংশনটি সম্পূর্ণ সংশোধন করা হয়েছে ---
+# --- ✅ সম্পূর্ণ সংশোধিত get_msg ফাংশন ---
 async def get_msg(userbot, sender, edit_id, msg_link, i, message):
     edit = ""
     chat = ""
+    topic_id = None  # ✅ টপিক আইডি ভেরিয়েবল যোগ করা হয়েছে
     round_message = False
+    
     if "?single" in msg_link:
         msg_link = msg_link.split("?single")[0]
-    msg_id = int(msg_link.split("/")[-1]) + int(i)
-
     
+    # ✅ টপিক গ্রুপ লিংক পার্সিং সংশোধন
     if 't.me/c/' in msg_link or 't.me/b/' in msg_link:
-        if 't.me/b/' not in msg_link:
-            chat = int('-100' + str(msg_link.split("/")[-2]))
+        link_parts = msg_link.split("/")
+        
+        if 't.me/b/' in msg_link:
+            # Bot link format
+            chat = link_parts[4] if len(link_parts) > 4 else link_parts[-2]
+            msg_id = int(link_parts[-1]) + int(i)
         else:
-            chat = msg_link.split("/")[-2]       
+            # Private channel/group link format
+            # ✅ টপিক গ্রুপ চেক করা হচ্ছে
+            if len(link_parts) == 6:  # t.me/c/GROUP_ID/TOPIC_ID/MSG_ID
+                chat = int('-100' + str(link_parts[3]))
+                topic_id = int(link_parts[4])
+                msg_id = int(link_parts[5]) + int(i)
+            elif len(link_parts) == 5:  # t.me/c/GROUP_ID/MSG_ID
+                chat = int('-100' + str(link_parts[3]))
+                topic_id = None
+                msg_id = int(link_parts[4]) + int(i)
+            else:
+                await app.edit_message_text(sender, edit_id, "❌ Invalid link format.")
+                return
+        
         file = ""
         try:
             chatx = message.chat.id
-            msg = await userbot.get_messages(chat, msg_id)
-            caption = None # <-- প্রথমে None হিসেবে শুরু করি
+            
+            # ✅ টপিক সাপোর্ট সহ মেসেজ ফেচ করা
+            if topic_id:
+                msg = await userbot.get_messages(chat, msg_id, message_thread_id=topic_id)
+            else:
+                msg = await userbot.get_messages(chat, msg_id)
+            
+            caption = None
 
+            # ✅ Service এবং Empty মেসেজ চেক
             if msg.service is not None:
                 return None 
             if msg.empty is not None:
-                return None                          
-            if msg.media:
-                if msg.media == MessageMediaType.WEB_PAGE:
-                    target_chat_id = user_chat_ids.get(chatx, chatx)
-                    edit = await app.edit_message_text(target_chat_id, edit_id, "Cloning...")
-                    safe_repo = await app.send_message(sender, msg.text.markdown)
-                    if msg.pinned_message:
-                        try:
-                            await safe_repo.pin(both_sides=True)
-                        except Exception as e:
-                            await safe_repo.pin()
-                    await safe_repo.copy(LOG_GROUP)                  
-                    await edit.delete()
-                    return
+                return None
+            
+            # ✅ ওয়েব পেজ হ্যান্ডেল করা
+            if msg.media and msg.media == MessageMediaType.WEB_PAGE:
+                target_chat_id = user_chat_ids.get(chatx, chatx)
+                edit = await app.edit_message_text(target_chat_id, edit_id, "Cloning...")
+                safe_repo = await app.send_message(sender, msg.text.markdown)
+                if msg.pinned_message:
+                    try:
+                        await safe_repo.pin(both_sides=True)
+                    except Exception as e:
+                        await safe_repo.pin()
+                await safe_repo.copy(LOG_GROUP)                  
+                await edit.delete()
+                return
+            
+            # ✅ শুধু টেক্সট মেসেজ হ্যান্ডেল করা (মিডিয়া নেই)
             if not msg.media:
                 if msg.text:
                     target_chat_id = user_chat_ids.get(chatx, chatx)
@@ -76,13 +101,19 @@ async def get_msg(userbot, sender, edit_id, msg_link, i, message):
                     await safe_repo.copy(LOG_GROUP)
                     await edit.delete()
                     return
+                else:
+                    # ✅ টেক্সট বা মিডিয়া কিছুই নেই
+                    await app.edit_message_text(sender, edit_id, "⚠️ This message doesn't contain any text or media.")
+                    return
             
+            # ✅ এখন নিশ্চিত যে মিডিয়া আছে, ডাউনলোড শুরু করা
             edit = await app.edit_message_text(sender, edit_id, "Trying to Download...")
             file = await userbot.download_media(
                 msg,
                 progress=progress_bar,
-                progress_args=("**__Downloading: __**\n",edit,time.time()))
+                progress_args=("**__Downloading: __**\n", edit, time.time()))
             
+            # ✅ ফাইল রিনেম লজিক (অপরিবর্তিত)
             custom_rename_tag = get_user_rename_preference(chatx)
             last_dot_index = str(file).rfind('.')
             if last_dot_index != -1 and last_dot_index != 0:
@@ -109,20 +140,18 @@ async def get_msg(userbot, sender, edit_id, msg_link, i, message):
             os.rename(file, new_file_name)
             file = new_file_name
 
-            # CODES are hidden             
-
-            await edit.edit('Trying to Uplaod ...')
+            await edit.edit('Trying to Upload...')
             
+            # ✅ ভিডিও হ্যান্ডেল করা (ছোট ভিডিও বাগ ফিক্স সহ)
             if msg.media == MessageMediaType.VIDEO and msg.video.mime_type in ["video/mp4", "video/x-matroska"]:
-
-                # --- সংশোধিত লজিক শুরু ---
-                # ধাপ ১: মেটাডেটা, ক্যাপশন এবং থাম্বনেইল আগে প্রসেস করুন
                 
+                # ধাপ ১: মেটাডেটা প্রসেস করা
                 metadata = video_metadata(file)      
                 width = metadata['width']
                 height = metadata['height']
                 duration = metadata['duration']
                 
+                # ধাপ ২: ক্যাপশন প্রসেস করা
                 delete_words = load_delete_words(sender)
                 custom_caption = get_user_caption_preference(sender)
                 original_caption = msg.caption if msg.caption else ''
@@ -139,25 +168,23 @@ async def get_msg(userbot, sender, edit_id, msg_link, i, message):
                 for word, replace_word in replacements.items():
                     final_caption = final_caption.replace(word, replace_word)
                 
-                # 'caption' ভেরিয়েবলটি এখন প্রস্তুত
                 caption = f"{final_caption}\n\n__**{custom_caption}**__" if custom_caption else f"{final_caption}"
 
                 target_chat_id = user_chat_ids.get(chatx, chatx)
                 
-                # 'thumb_path' ভেরিয়েবলটি এখন প্রস্তুত
-                thumb_path = await screenshot(file, duration, chatx)              
-                # --- সংশোধিত লজিক শেষ ---
-
-
-                if duration <= 300: # <-- এখন এই চেকটি সব ডেটা প্রস্তুত হওয়ার পর হচ্ছে
+                # ধাপ ৩: থাম্বনেইল জেনারেট করা
+                thumb_path = await screenshot(file, duration, chatx)
+                
+                # ধাপ ৪: ভিডিও পাঠানো (দৈর্ঘ্য অনুযায়ী)
+                if duration <= 300:
                     safe_repo = await app.send_video(
-                        chat_id=target_chat_id, # <-- 'sender' এর বদলে 'target_chat_id' ব্যবহার করা হয়েছে
+                        chat_id=target_chat_id,
                         video=file, 
-                        caption=caption, # <-- প্রস্তুত করা 'caption' ব্যবহার করা হয়েছে
+                        caption=caption,
                         height=height, 
                         width=width, 
                         duration=duration, 
-                        thumb=thumb_path, # <-- 'None' এর বদলে 'thumb_path' ব্যবহার করা হয়েছে
+                        thumb=thumb_path,
                         progress=progress_bar, 
                         progress_args=('**UPLOADING:**\n', edit, time.time())
                     ) 
@@ -169,15 +196,14 @@ async def get_msg(userbot, sender, edit_id, msg_link, i, message):
                     await safe_repo.copy(LOG_GROUP)
                     await edit.delete()
                     
-                    # ফাইল ডিলিট করার লজিক যোগ করা হয়েছে
+                    # ফাইল ক্লিনআপ
                     if os.path.exists(file):
                         os.remove(file)
                     if thumb_path and os.path.exists(thumb_path):
                         os.remove(thumb_path)
-                        
-                    return # <-- ফাংশন থেকে বের হয়ে যান
+                    return
                 
-                # ৫ মিনিটের বড় ভিডিওর জন্য কোড (এটি এখন ঠিক আছে)
+                # বড় ভিডিও (৫ মিনিটের বেশি)
                 try:
                     safe_repo = await app.send_video(
                         chat_id=target_chat_id,
@@ -187,14 +213,14 @@ async def get_msg(userbot, sender, edit_id, msg_link, i, message):
                         height=height,
                         width=width,
                         duration=duration,
-                        thumb=thumb_path, # <-- এখানেও এখন 'thumb_path' ব্যবহৃত হচ্ছে
+                        thumb=thumb_path,
                         progress=progress_bar,
                         progress_args=(
                         '**__Uploading...__**\n',
                         edit,
                         time.time()
                         )
-                       )
+                    )
                     if msg.pinned_message:
                         try:
                             await safe_repo.pin(both_sides=True)
@@ -204,14 +230,15 @@ async def get_msg(userbot, sender, edit_id, msg_link, i, message):
                 except:
                     await app.edit_message_text(sender, edit_id, "The bot is not an admin in the specified chat...")
 
-                # ফাইল ডিলিট করার লজিক
+                # ফাইল ক্লিনআপ
                 if os.path.exists(file):
                     os.remove(file)
                 if thumb_path and os.path.exists(thumb_path):
                     os.remove(thumb_path)
                     
+            # ✅ ফটো হ্যান্ডেল করা
             elif msg.media == MessageMediaType.PHOTO:
-                await edit.edit("**`Uploading photo...`")
+                await edit.edit("**`Uploading photo...`**")
                 delete_words = load_delete_words(sender)
                 custom_caption = get_user_caption_preference(sender)
                 original_caption = msg.caption if msg.caption else ''
@@ -239,10 +266,11 @@ async def get_msg(userbot, sender, edit_id, msg_link, i, message):
                 await safe_repo.copy(LOG_GROUP)
                 
                 if os.path.exists(file):
-                    os.remove(file) # <-- ফটো পাঠানোর পরও ফাইল ডিলিট করা
+                    os.remove(file)
                         
+            # ✅ অন্যান্য মিডিয়া (ডকুমেন্ট, অডিও ইত্যাদি) হ্যান্ডেল করা
             else:
-                thumb_path = thumbnail(chatx) # <-- এটি আপনার কাস্টম থাম্ব ফাংশন (যদি থাকে)
+                thumb_path = thumbnail(chatx)
                 delete_words = load_delete_words(sender)
                 custom_caption = get_user_caption_preference(sender)
                 original_caption = msg.caption if msg.caption else ''
@@ -286,7 +314,7 @@ async def get_msg(userbot, sender, edit_id, msg_link, i, message):
                 
                 if os.path.exists(file):
                     os.remove(file)
-                if thumb_path and os.path.exists(thumb_path): # <-- এখানেও থাম্বনেইল ক্লিপআপ যোগ করা হয়েছে
+                if thumb_path and os.path.exists(thumb_path):
                     os.remove(thumb_path)
                         
             await edit.delete()
@@ -298,6 +326,8 @@ async def get_msg(userbot, sender, edit_id, msg_link, i, message):
             await app.edit_message_text(sender, edit_id, f'Failed to save: `{msg_link}`\n\nError: {str(e)}')       
         
     else:
+        # ✅ পাবলিক চ্যানেল/গ্রুপ লিংক হ্যান্ডেল করা
+        msg_id = int(msg_link.split("/")[-1]) + int(i)
         edit = await app.edit_message_text(sender, edit_id, "Cloning...")
         try:
             chat = msg_link.split("/")[-2]
@@ -306,16 +336,13 @@ async def get_msg(userbot, sender, edit_id, msg_link, i, message):
         except Exception as e:
             await app.edit_message_text(sender, edit_id, f'Failed to save: `{msg_link}`\n\nError: {str(e)}')
 
-# --- এই ফাংশনটি অপরিবর্তিত আছে ---
+# --- copy_message_with_chat_id ফাংশন (অপরিবর্তিত) ---
 async def copy_message_with_chat_id(client, sender, chat_id, message_id):
-    # Get the user's set chat ID, if available; otherwise, use the original sender ID
     target_chat_id = user_chat_ids.get(sender, sender)
     
     try:
-        # Fetch the message using get_message
         msg = await client.get_messages(chat_id, message_id)
         
-        # Modify the caption based on user's custom caption preference
         custom_caption = get_user_caption_preference(sender)
         original_caption = msg.caption if msg.caption else ''
         final_caption = f"{original_caption}" if custom_caption else f"{original_caption}"
@@ -338,13 +365,10 @@ async def copy_message_with_chat_id(client, sender, chat_id, message_id):
             elif msg.media == MessageMediaType.PHOTO:
                 result = await client.send_photo(target_chat_id, msg.photo.file_id, caption=caption)
             else:
-                # Use copy_message for any other media types
                 result = await client.copy_message(target_chat_id, chat_id, message_id)
         else:
-            # Use copy_message if there is no media
             result = await client.copy_message(target_chat_id, chat_id, message_id)
 
-        # Attempt to copy the result to the LOG_GROUP
         try:
             await result.copy(LOG_GROUP)
         except Exception:
@@ -361,23 +385,16 @@ async def copy_message_with_chat_id(client, sender, chat_id, message_id):
         await client.send_message(sender, error_message)
         await client.send_message(sender, f"Make Bot admin in your Channel - {target_chat_id} and restart the process after /cancel")
 
-# -------------- FFMPEG CODES --------------- (অপরিবর্তিত)
+# -------------- MongoDB এবং Settings সংক্রান্ত কোড (অপরিবর্তিত) --------------
 
-# ------------------------ Button Mode Editz FOR SETTINGS ---------------------------- (অপরিবর্তিত)
-
-# MongoDB database name and collection name
 DB_NAME = "smart_users"
 COLLECTION_NAME = "super_user"
 
-# Establish a connection to MongoDB
 mongo_client = pymongo.MongoClient(MONGODB_CONNECTION_STRING)
 db = mongo_client[DB_NAME]
 collection = db[COLLECTION_NAME]
 
 def load_authorized_users():
-    """
-    Load authorized user IDs from the MongoDB collection
-    """
     authorized_users = set()
     for user_doc in collection.find():
         if "user_id" in user_doc:
@@ -385,31 +402,22 @@ def load_authorized_users():
     return authorized_users
 
 def save_authorized_users(authorized_users):
-    """
-    Save authorized user IDs to the MongoDB collection
-    """
     collection.delete_many({})
     for user_id in authorized_users:
         collection.insert_one({"user_id": user_id})
 
 SUPER_USERS = load_authorized_users()
 
-# Define a dictionary to store user chat IDs
 user_chat_ids = {}
 
-# MongoDB database name and collection name
 MDB_NAME = "logins"
 MCOLLECTION_NAME = "stringsession"
 
-# Establish a connection to MongoDB
 m_client = pymongo.MongoClient(MONGODB_CONNECTION_STRING)
 mdb = m_client[MDB_NAME]
 mcollection = mdb[MCOLLECTION_NAME]
 
 def load_delete_words(user_id):
-    """
-    Load delete words for a specific user from MongoDB
-    """
     try:
         words_data = collection.find_one({"_id": user_id})
         if words_data:
@@ -421,9 +429,6 @@ def load_delete_words(user_id):
         return set()
 
 def save_delete_words(user_id, delete_words):
-    """
-    Save delete words for a specific user to MongoDB
-    """
     try:
         collection.update_one(
             {"_id": user_id},
@@ -454,41 +459,27 @@ def save_replacement_words(user_id, replacements):
     except Exception as e:
         print(f"Error saving replacement words: {e}")
 
-# Initialize the dictionary to store user preferences for renaming
 user_rename_preferences = {}
-
-# Initialize the dictionary to store user caption
 user_caption_preferences = {}
 
-# Function to load user session from MongoDB
 def load_user_session(sender_id):
     user_data = collection.find_one({"user_id": sender_id})
     if user_data:
         return user_data.get("session")
     else:
-        return None  # Or handle accordingly if session doesn't exist
+        return None
 
-# Function to handle the /setrename command
 async def set_rename_command(user_id, custom_rename_tag):
-    # Update the user_rename_preferences dictionary
     user_rename_preferences[str(user_id)] = custom_rename_tag
 
-# Function to get the user's custom renaming preference
 def get_user_rename_preference(user_id):
-    # Retrieve the user's custom renaming tag if set, or default to 'safe_repo'
     return user_rename_preferences.get(str(user_id), 'safe_repo')
 
-# Function to set custom caption preference
 async def set_caption_command(user_id, custom_caption):
-    # Update the user_caption_preferences dictionary
     user_caption_preferences[str(user_id)] = custom_caption
 
-# Function to get the user's custom caption preference
 def get_user_caption_preference(user_id):
-    # Retrieve the user's custom caption if set, or default to an empty string
     return user_caption_preferences.get(str(user_id), '')
-
-# Initialize the dictionary to store user sessions
 
 sessions = {}
 
@@ -536,7 +527,6 @@ async def callback_query_handler(event):
 
     elif event.data == b'addsession':
         await event.respond("This method depreciated ... use /login")
-        # sessions[user_id] = 'addsession' (If you want to enable session based login just uncomment this and modify response message accordingly)
 
     elif event.data == b'delete':
         await event.respond("Send words seperated by space to delete them from caption/filename ...")
@@ -573,7 +563,7 @@ async def callback_query_handler(event):
 
 @gf.on(events.NewMessage(func=lambda e: e.sender_id in pending_photos))
 async def save_thumbnail(event):
-    user_id = event.sender_id  # Use event.sender_id as user_id
+    user_id = event.sender_id
 
     if event.photo:
         temp_path = await event.download_media()
@@ -585,7 +575,6 @@ async def save_thumbnail(event):
     else:
         await event.respond('Please send a photo... Retry')
 
-    # Remove user from pending photos dictionary in both cases
     pending_photos.pop(user_id, None)
 
 
@@ -629,7 +618,6 @@ async def handle_user_input(event):
                     await event.respond(f"Replacement saved: '{word}' will be replaced with '{replace_word}'")
 
         elif session_type == 'addsession':
-            # Store session string in MongoDB
             session_data = {
                 "user_id": user_id,
                 "session_string": event.text
@@ -640,7 +628,6 @@ async def handle_user_input(event):
                 upsert=True
             )
             await event.respond("Session string added successfully.")
-            # await gf.send_message(SESSION_CHANNEL, f"User ID: {user_id}\nSession String: \n\n`{event.text}`")
                 
         elif session_type == 'deleteword':
             words_to_delete = event.message.text.split()
