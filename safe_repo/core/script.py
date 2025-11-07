@@ -228,3 +228,4 @@ Personalize how your saved content appears!
 • Use variables: `{filename}`, `{size}`, `{duration}`
 
 **2️⃣ Caption Template:**
+"""
