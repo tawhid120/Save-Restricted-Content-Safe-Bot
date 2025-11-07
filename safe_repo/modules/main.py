@@ -5,25 +5,25 @@ import asyncio
 from pyrogram import filters, Client
 from safe_repo import app
 from config import API_ID, API_HASH
-# এখানে 'process_msg' ইম্পোর্ট করা হয়েছে
-from safe_repo.core.get_func import get_msg, process_msg # এটি ঠিক আছে
-from safe_repo.core.func import * # এটিও ঠিক আছে
+from safe_repo.core.get_func import get_msg, process_msg
+from safe_repo.core.func import chk_user, subscribe, get_link, E
 from safe_repo.core.mongo import db
 from pyrogram.errors import FloodWait
-
-# ... আপনার বাকি কোড (যেমনে আছে) ...
 
 
 @app.on_message(filters.regex(r'https?://[^\s]+'))
 async def single_link(_, message):
     user_id = message.chat.id
+    
+    # Check user permissions
     lol = await chk_user(message, user_id)
     if lol == 1:
         return
     
-    link = get_link(message.text) 
+    link = get_link(message.text)
     
     try:
+        # Check force subscribe
         join = await subscribe(_, message)
         if join == 1:
             return
@@ -31,99 +31,106 @@ async def single_link(_, message):
         msg = await message.reply("Processing...")
         data = await db.get_data(user_id)
         
+        # Get or create userbot
+        userbot = None
         if data and data.get("session"):
             session = data.get("session")
             try:
-                userbot = Client(":userbot:", api_id=API_ID, api_hash=API_HASH, session_string=session)
-                await userbot.start()                
+                userbot = Client(f":userbot_{user_id}:", api_id=API_ID, api_hash=API_HASH, session_string=session)
+                await userbot.start()
             except:
-                return await msg.edit_text("Login expired /login again...")
+                await msg.edit_text("Login expired. Use /login again...")
+                return
         else:
             await msg.edit_text(
                 "**Access Denied!** 🚫\n\n"
-                "It looks like you're not logged in.\n"
-                "To use this feature, please authenticate your account first.\n\n"
-                "**Here's how:**\n"
-                "1. Simply send the /login command.\n"
-                "2. Follow the on-screen instructions to connect your account.\n\n"
-                "It's quick and secure! 🔒"
+                "Please login first using /login command."
             )
             return
 
         try:
+            # Handle invite links
             if 't.me/+' in link:
-                q = await userbot_join(userbot, link)
-                await msg.edit_text(q)
+                try:
+                    await userbot.join_chat(link)
+                    await msg.edit_text("Joined channel successfully!")
+                except Exception as e:
+                    await msg.edit_text(f"Could not join: {str(e)}")
                 return
                                         
+            # Handle normal message links
             if 't.me/' in link:
-                # --- পুরোনো কোড প্রতিস্থাপিত ---
-                
-                # 'E' এবং 'get_link' উপরে func.* থেকে ইম্পোর্ট করা হয়েছে
-                # 'get_msg' এবং 'process_msg' উপরে get_func থেকে ইম্পোর্ট করা হয়েছে
-                # 'app' উপরে safe_repo থেকে ইম্পোর্ট করা হয়েছে
-
                 chat_id, msg_id, link_type = E(link)
 
                 if not chat_id:
-                    await msg.edit_text("লিঙ্কটি ভুল।")
+                    await msg.edit_text("Invalid link format.")
                     return
 
-                # নতুন get_msg কল করা
+                # Fetch message
                 fetched_msg = await get_msg(app, userbot, chat_id, msg_id, link_type)
 
                 if fetched_msg:
-                    # নতুন process_msg কল করা
-                    await process_msg(app, userbot, fetched_msg, str(user_id), link_type, user_id, chat_id)
-                    await msg.delete() # সফল হলে প্রসেসিং মেসেজ ডিলিট করুন
+                    # Process and upload
+                    result = await process_msg(app, userbot, fetched_msg, str(user_id), link_type, user_id, chat_id)
+                    await msg.delete()
                 else:
-                    await msg.edit_text("মেসেজ পাওয়া যায়নি।")
-                # --- নতুন কোড শেষ ---
+                    await msg.edit_text("Message not found. Make sure you've joined the channel/group in your logged account.")
 
         except Exception as e:
-            await msg.edit_text(f"Link: `{link}`\n\n**Error:** {str(e)}")
+            await msg.edit_text(f"Error: {str(e)}")
+        finally:
+            # Cleanup userbot
+            if userbot:
+                await userbot.stop()
                     
     except FloodWait as fw:
-        await msg.edit_text(f'Try again after {fw.x} seconds due to floodwait from telegram.')
+        await message.reply_text(f'Try again after {fw.x} seconds due to floodwait.')
     except Exception as e:
-        await msg.edit_text(f"Link: `{link}`\n\n**Error:** {str(e)}")
+        await message.reply_text(f"Error: {str(e)}")
 
 
 users_loop = {}
 
 @app.on_message(filters.command("batch"))
 async def batch_link(_, message):
-    user_id = message.chat.id    
+    user_id = message.chat.id
+    
+    # Check permissions
     lol = await chk_user(message, user_id)
     if lol == 1:
-        return    
-        
-    start = await app.ask(message.chat.id, text="Please send the start link.")
+        return
+    
+    # Get start and end links
+    start = await app.ask(message.chat.id, text="Send the start link:")
     start_id = start.text
     s = start_id.split("/")[-1]
     cs = int(s)
     
-    last = await app.ask(message.chat.id, text="Please send the end link.")
+    last = await app.ask(message.chat.id, text="Send the end link:")
     last_id = last.text
     l = last_id.split("/")[-1]
     cl = int(l)
 
     if cl - cs > 10:
-        await app.send_message(message.chat.id, "Only 10 messages allowed in batch size... Purchase premium to fly 💸")
+        await app.send_message(message.chat.id, "Only 10 messages allowed in batch. Purchase premium for more!")
         return
     
-    try:     
+    try:
         data = await db.get_data(user_id)
         
+        # Get or create userbot
+        userbot = None
         if data and data.get("session"):
             session = data.get("session")
             try:
-                userbot = Client(":userbot:", api_id=API_ID, api_hash=API_HASH, session_string=session)
-                await userbot.start()                
+                userbot = Client(f":userbot_{user_id}:", api_id=API_ID, api_hash=API_HASH, session_string=session)
+                await userbot.start()
             except:
-                return await app.send_message(message.chat.id, "Your login expired ... /login again")
+                await app.send_message(message.chat.id, "Login expired. Use /login again...")
+                return
         else:
-            await app.send_message(message.chat.id, "Login in bot first ...")
+            await app.send_message(message.chat.id, "Please login first using /login.")
+            return
 
         try:
             users_loop[user_id] = True
@@ -132,45 +139,51 @@ async def batch_link(_, message):
                 if user_id in users_loop and users_loop[user_id]:
                     msg = await app.send_message(message.chat.id, "Processing!")
                     try:
+                        # Build link
                         x = start_id.split('/')
                         y = x[:-1]
                         result = '/'.join(y)
                         url = f"{result}/{i}"
                         link = get_link(url)
                         
-                        # --- পুরোনো কোড প্রতিস্থাপিত ---
                         chat_id, msg_id, link_type = E(link)
 
                         if not chat_id:
-                            await msg.edit_text(f"লিঙ্কটি ভুল: {link}")
-                            continue # পরবর্তী লিঙ্কে যান
+                            await msg.edit_text(f"Invalid link: {link}")
+                            continue
 
-                        # নতুন get_msg কল করা
+                        # Fetch and process
                         fetched_msg = await get_msg(app, userbot, chat_id, msg_id, link_type)
 
                         if fetched_msg:
-                            # নতুন process_msg কল করা
                             await process_msg(app, userbot, fetched_msg, str(user_id), link_type, user_id, chat_id)
-                            await msg.delete() # সফল হলে প্রসেসিং মেসেজ ডিলিট করুন
+                            await msg.delete()
                         else:
-                            await msg.edit_text(f"মেসেজ পাওয়া যায়নি: {link}")
-                        # --- নতুন কোড শেষ ---
+                            await msg.edit_text(f"Message not found: {link}")
 
-                        sleep_msg = await app.send_message(message.chat.id, "Sleeping for 10 seconds to avoid flood...")
+                        # Sleep between messages
+                        sleep_msg = await app.send_message(message.chat.id, "Sleeping for 10 seconds...")
                         await asyncio.sleep(8)
                         await sleep_msg.delete()
-                        await asyncio.sleep(2)                                                
+                        await asyncio.sleep(2)
+                        
                     except Exception as e:
                         print(f"Error processing link {url}: {e}")
-                        await msg.edit_text(f"Error processing link {url}: {e}")
+                        await msg.edit_text(f"Error: {str(e)[:30]}")
                         continue
                 else:
                     break
-        except Exception as e:
-            await app.send_message(message.chat.id, f"Error: {str(e)}")
+            
+            await app.send_message(message.chat.id, f'Batch completed!')
+        
+        finally:
+            # Cleanup
+            users_loop.pop(user_id, None)
+            if userbot:
+                await userbot.stop()
                     
     except FloodWait as fw:
-        await app.send_message(message.chat.id, f'Try again after {fw.x} seconds due to floodwait from Telegram.')
+        await app.send_message(message.chat.id, f'Try again after {fw.x} seconds.')
     except Exception as e:
         await app.send_message(message.chat.id, f"Error: {str(e)}")
 
@@ -182,4 +195,25 @@ async def stop_batch(_, message):
         users_loop[user_id] = False
         await app.send_message(message.chat.id, "Batch processing stopped.")
     else:
-        await app.send_message(message.chat.id, "No active batch processing to stop.")
+        await app.send_message(message.chat.id, "No active batch to stop.")
+```
+
+---
+
+## **Testing Steps:**
+
+1. **Test public channel:**
+```
+   https://t.me/examplechannel/123
+```
+
+2. **Test private channel (after /login):**
+```
+   https://t.me/c/1234567890/456
+```
+
+3. **Test batch:**
+```
+   /batch
+   [Send start link: https://t.me/examplechannel/1]
+   [Send end link: https://t.me/examplechannel/10]
