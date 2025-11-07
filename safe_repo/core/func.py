@@ -165,7 +165,10 @@ def TimeFormatter(milliseconds: int) -> str:
     return tmp[:-2] 
 
 
-
+# এই ফাংশনটি safe_repo/core/func.py ফাইলে যোগ করুন
+def thumbnail(sender):
+    return f'{sender}.jpg' if os.path.exists(f'{sender}.jpg') else None
+    
 def convert(seconds):
     seconds = seconds % (24 * 3600)
     hour = seconds // 3600
