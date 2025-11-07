@@ -4,7 +4,7 @@ import asyncio
 import logging
 from pyromod import listen
 from pyrogram import Client
-from telethon import TelegramClient
+# from telethon import TelegramClient  <--- COMMENT OUT OR DELETE
 from config import API_ID, API_HASH, BOT_TOKEN
 
 loop = asyncio.get_event_loop()
@@ -15,7 +15,7 @@ logging.basicConfig(
 )
 
 # Telethon client (sexrepo)
-sex = TelegramClient('sexrepo', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
+# sex = TelegramClient('sexrepo', API_ID, API_HASH).start(bot_token=BOT_TOKEN) <--- COMMENT OUT OR DELETE THIS LINE
 
 # Pyrogram bot client
 app = Client(
