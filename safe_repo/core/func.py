@@ -13,20 +13,6 @@ from pyrogram.errors import FloodWait, InviteHashInvalid, InviteHashExpired, Use
 from datetime import datetime as dt
 import asyncio, subprocess, re, os, time
 
-# devgaganin থেকে যোগ করা নতুন ইম্পোর্ট
-import concurrent.futures
-import logging
-try:
-    from safe_repo.core.mongo import db
-except ImportError:
-    print("Warning: Could not import 'db' from 'safe_repo.core.mongo'. Rename function might fail.")
-    db = None # একটি ফলব্যাক সেট করা হয়েছে
-
-# devgaganin এর settings.py থেকে যোগ করা হয়েছে
-VIDEO_EXTENSIONS = {
-    'mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'webm',
-    'mpeg', 'mpg', '3gp'
-}
 
 
 async def chk_user(message, user_id):
@@ -165,10 +151,7 @@ def TimeFormatter(milliseconds: int) -> str:
     return tmp[:-2] 
 
 
-# এই ফাংশনটি safe_repo/core/func.py ফাইলে যোগ করুন
-def thumbnail(sender):
-    return f'{sender}.jpg' if os.path.exists(f'{sender}.jpg') else None
-    
+
 def convert(seconds):
     seconds = seconds % (24 * 3600)
     hour = seconds // 3600
@@ -208,181 +191,60 @@ def get_link(string):
     except Exception:
         return False
 
-# -----------------------------------------------------------------
-# নিচের ফাংশনগুলো devgaganin এর প্রজেক্ট থেকে যোগ করা বা প্রতিস্থাপন করা হয়েছে
-# -----------------------------------------------------------------
 
+def video_metadata(file):
+    default_values = {'width': 1, 'height': 1, 'duration': 1}
+    try:
+        vcap = cv2.VideoCapture(file)
+        if not vcap.isOpened():
+            return default_values  # Return defaults if video cannot be opened
+
+        width = round(vcap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = round(vcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = vcap.get(cv2.CAP_PROP_FPS)
+        frame_count = vcap.get(cv2.CAP_PROP_FRAME_COUNT)
+
+        if fps <= 0:
+            return default_values  # Return defaults if FPS value is zero or negative
+
+        duration = round(frame_count / fps)
+        if duration <= 0:
+            return default_values  # Return defaults if duration is zero or negative
+
+        vcap.release()
+        return {'width': width, 'height': height, 'duration': duration}
+
+    except Exception as e:
+        print(f"Error in video_metadata: {e}")
+        return default_values
+    
 def hhmmss(seconds):
     return time.strftime('%H:%M:%S',time.gmtime(seconds))
 
-# devgaganin/utils/func.py থেকে প্রতিস্থাপিত (Replaced)
-async def screenshot(video: str, duration: int, sender: str) -> str | None:
-    existing_screenshot = f"{sender}.jpg"
-    if os.path.exists(existing_screenshot):
-        return existing_screenshot
-
-    time_stamp = hhmmss(duration // 2)
-    output_file = dt.now().isoformat("_", "seconds") + ".jpg"
-
-    cmd = [
-        "ffmpeg",
-        "-ss", time_stamp,
-        "-i", video,
-        "-frames:v", "1",
-        output_file,
-        "-y"
-    ]
-
+async def screenshot(video, duration, sender):
+    if os.path.exists(f'{sender}.jpg'):
+        return f'{sender}.jpg'
+    time_stamp = hhmmss(int(duration)/2)
+    out = dt.now().isoformat("_", "seconds") + ".jpg"
+    cmd = ["ffmpeg",
+           "-ss",
+           f"{time_stamp}", 
+           "-i",
+           f"{video}",
+           "-frames:v",
+           "1", 
+           f"{out}",
+           "-y"
+          ]
     process = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE
     )
-    
     stdout, stderr = await process.communicate()
-
-    if os.path.isfile(output_file):
-        return output_file
+    x = stderr.decode().strip()
+    y = stdout.decode().strip()
+    if os.path.isfile(out):
+        return out
     else:
-        print(f"FFmpeg Error: {stderr.decode().strip()}")
-        return None
-
-# devgaganin/utils/func.py থেকে প্রতিস্থাপিত (Replaced)
-async def get_video_metadata(file_path):
-    default_values = {'width': 1, 'height': 1, 'duration': 1}
-    loop = asyncio.get_event_loop()
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
-    
-    try:
-        def _extract_metadata():
-            try:
-                vcap = cv2.VideoCapture(file_path)
-                if not vcap.isOpened():
-                    return default_values
-
-                width = round(vcap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                height = round(vcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                fps = vcap.get(cv2.CAP_PROP_FPS)
-                frame_count = vcap.get(cv2.CAP_PROP_FRAME_COUNT)
-
-                if fps <= 0:
-                    return default_values
-
-                duration = round(frame_count / fps)
-                if duration <= 0:
-                    return default_values
-
-                vcap.release()
-                return {'width': width, 'height': height, 'duration': duration}
-            except Exception as e:
-                logging.error(f"Error in video_metadata: {e}")
-                return default_values
-        
-        return await loop.run_in_executor(executor, _extract_metadata)
-        
-    except Exception as e:
-        logging.error(f"Error in get_video_metadata: {e}")
-        return default_values
-
-# devgaganin/utils/func.py থেকে যোগ করা হয়েছে (Added)
-def E(L):   
-    private_match = re.match(r'https://t\.me/c/(\d+)/(?:\d+/)?(\d+)', L)
-    public_match = re.match(r'https://t\.me/([^/]+)/(?:\d+/)?(\d+)', L)
-    
-    if private_match:
-        return f'-100{private_match.group(1)}', int(private_match.group(2)), 'private'
-    elif public_match:
-        return public_match.group(1), int(public_match.group(2)), 'public'
-    
-    return None, None, None
-
-# devgaganin/plugins/settings.py থেকে যোগ করা হয়েছে এবং আপনার ডেটাবেস অনুযায়ী পরিবর্তন করা হয়েছে (Added and Modified)
-async def rename_file(file, sender, edit): # 'sender' হলো user_id
-    try:
-        # আপনার প্রজেক্টের (tawhid120) ডেটাবেস লজিক ব্যবহার করা হয়েছে
-        if db:
-            user_data = await db.get_data(sender)
-        else:
-            user_data = None
-            
-        if user_data:
-            delete_words = user_data.get('delete_words', [])
-            custom_rename_tag = user_data.get('rename_tag', '')
-            replacements = user_data.get('replacement_words', {})
-        else:
-            delete_words = []
-            custom_rename_tag = ''
-            replacements = {}
-        
-        last_dot_index = str(file).rfind('.')
-        if last_dot_index != -1 and last_dot_index != 0:
-            ggn_ext = str(file)[last_dot_index + 1:]
-            if ggn_ext.isalpha() and len(ggn_ext) <= 9:
-                if ggn_ext.lower() in VIDEO_EXTENSIONS:
-                    original_file_name = str(file)[:last_dot_index]
-                    file_extension = 'mp4' # devgaganin ডিফল্ট mp4 ব্যবহার করে
-                else:
-                    original_file_name = str(file)[:last_dot_index]
-                    file_extension = ggn_ext
-            else:
-                original_file_name = str(file)[:last_dot_index]
-                file_extension = 'mp4' # devgaganin ডিফল্ট mp4 ব্যবহার করে
-        else:
-            original_file_name = str(file)
-            file_extension = 'mp4' # devgaganin ডিফল্ট mp4 ব্যবহার করে
-        
-        for word in delete_words:
-            original_file_name = original_file_name.replace(word, '')
-        
-        for word, replace_word in replacements.items():
-            original_file_name = original_file_name.replace(word, replace_word)
-        
-        # ফাইল নামের খালি স্থান ঠিক করা
-        original_file_name = ' '.join(original_file_name.split())
-        
-        new_file_name = f'{original_file_name} {custom_rename_tag}.{file_extension}'
-        
-        os.rename(file, new_file_name)
-        return new_file_name
-    except Exception as e:
-        print(f"Rename error: {e}")
-        return file
-
-# ---- ADD THESE AT THE END OF func.py ----
-
-async def process_text_with_rules(user_data: dict, text: str) -> str:
-    """
-    Process caption text by applying delete and replacement rules.
-    """
-    if not text or not user_data:
-        return text
-
-    delete_words = user_data.get('delete_words', [])
-    replacement_words = user_data.get('replacement_words', {})
-
-    # Apply delete words
-    if delete_words:
-        for word in delete_words:
-            text = text.replace(word, "")
-
-    # Apply replacements
-    if replacement_words:
-        for old, new in replacement_words.items():
-            text = text.replace(old, new)
-            
-    # Clean up extra spaces
-    text = ' '.join(text.split())
-    return text
-
-
-async def get_thumbnail_for_video(user_data: dict, video_file: str, duration: int, user_id: int):
-    """
-    Get custom thumbnail or generate one from video.
-    """
-    # Check for custom thumbnail
-    custom_thumb = user_data.get('thumb')
-    if custom_thumb and os.path.exists(custom_thumb):
-        return custom_thumb
-    
-    # Generate thumbnail from video
-    return await screenshot(video_file, duration, user_id)
+        None  
