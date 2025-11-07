@@ -1,30 +1,28 @@
 # safe_repo/core/get_func.py
-# এই ফাইলটি devgaganin (batch.py) এবং tawhid120 (original_func.py) এর সমন্বয়ে তৈরি করা হয়েছে।
-# (উন্নত সংস্করণ: ৪জিবি সাপোর্ট, টেক্সট রুলস এবং কাস্টম থাম্বনেইল সহ)
+# এই ফাইলটি এখন safe_repo/core/func.py থেকে হেল্পার ফাংশন ইম্পোর্ট করে।
 
 import os
 import re
 import time
 import asyncio
-import cv2
-import subprocess
-import math
-from datetime import datetime as dt
-from typing import Optional, Tuple
+from typing import Optional
 
 # Pyrogram ইম্পোর্ট
-from pyrogram import enums
-from pyrogram.errors import (
-    FloodWait, InviteHashInvalid, InviteHashExpired, 
-    UserAlreadyParticipant, UserNotParticipant
-)
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from pyrogram.errors import UserNotParticipant
 
 # tawhid120 প্রজেক্টের নিজস্ব ইম্পোর্ট
-from config import CHANNEL_ID, OWNER_ID, LOG_GROUP
-from safe_repo.core import script
+from config import LOG_GROUP
 from safe_repo.core.mongo import db
-from safe_repo.core.func import rename_file # আপনার নির্দেশনা অনুযায়ী ইম্পোর্ট
+
+# --- func.py থেকে হেল্পার ফাংশন ইম্পোর্ট করা ---
+from safe_repo.core.func import (
+    rename_file,
+    video_metadata,
+    screenshot,
+    hhmmss,
+    humanbytes,
+    TimeFormatter
+)
 
 # devgaganin (batch.py) থেকে আনা ক্লায়েন্ট ইম্পোর্ট
 try:
@@ -143,10 +141,10 @@ async def get_msg(c, u, i: str, d: int, lt: str):
 
 async def prog(c, t, C, h, m, st):
     """
-    ডাউনলোড/আপলোড პროগ্রেস বার দেখায়।
+    ডাউনলোড/আপলোড პროগ্রেস বার দেখায়। (devgaganin-এর টেক্সট-ভিত্তিক)
     """
     global P
-    if t == 0: return # ZeroDivisionError এড়াতে
+    if t == 0: return 
     
     p = c / t * 100
     interval = 10 if t >= 100 * 1024 * 1024 else 20 if t >= 50 * 1024 * 1024 else 30 if t >= 10 * 1024 * 1024 else 50
@@ -158,7 +156,7 @@ async def prog(c, t, C, h, m, st):
         bar = '🟢' * int(p / 10) + '🔴' * (10 - int(p / 10))
         
         diff = time.time() - st
-        if diff == 0: diff = 0.001 # ZeroDivisionError এড়াতে
+        if diff == 0: diff = 0.001 
             
         speed = c / diff / (1024 * 1024)
         eta = time.strftime('%M:%S', time.gmtime((t - c) / (speed * 1024 * 1024))) if speed > 0 else '00:00'
@@ -213,17 +211,14 @@ async def process_text_with_rules(user_data: dict, text: str) -> str:
     if not delete_words and not replacement_words:
         return text
 
-    # শব্দ ডিলেট করা
     if delete_words:
         for word in delete_words:
             text = text.replace(word, "")
 
-    # শব্দ রিপ্লেস করা
     if replacement_words:
         for old, new in replacement_words.items():
             text = text.replace(old, new)
             
-    # অতিরিক্ত স্পেস পরিষ্কার করা
     text = ' '.join(text.split())
     return text
 
@@ -231,13 +226,13 @@ async def process_text_with_rules(user_data: dict, text: str) -> str:
 async def get_thumbnail(user_data: dict, video_file: str, duration: int, user_id: int) -> Optional[str]:
     """
     প্রথমে কাস্টম থাম্বনেইল খোঁজে, না পেলে নতুন জেনারেট করে।
+    এটি func.py থেকে screenshot ইম্পোর্ট করে।
     """
     custom_thumb = user_data.get('thumb')
     
     if custom_thumb and os.path.exists(custom_thumb):
         return custom_thumb
     
-    # কাস্টম থাম্বনেইল না থাকলে, নতুন জেনারেট করা
     return await screenshot(video_file, duration, user_id)
 
 
@@ -246,10 +241,10 @@ async def get_thumbnail(user_data: dict, video_file: str, duration: int, user_id
 async def process_msg(c, u, m, d, lt, uid, i):
     """
     মেসেজ প্রসেস, ডাউনলোড এবং আপলোড করে। (উন্নত সংস্করণ)
+    এটি func.py থেকে video_metadata, screenshot, rename_file ইম্পোর্ট করে।
     """
     try:
-        # --- Tawhid120 রিফ্যাক্টরিং: ইউজার ডেটাবেস থেকে সেটিংস আনা ---
-        user_data = await db.get_data(d) # 'd' হলো user_id
+        user_data = await db.get_data(d) 
         if not user_data:
             user_data = {} 
         
@@ -267,10 +262,7 @@ async def process_msg(c, u, m, d, lt, uid, i):
         
         if m.media:
             orig_text = m.caption.markdown if m.caption else ''
-            
-            # --- উন্নত ফিচার: টেক্সট প্রসেসিং ---
             proc_text = await process_text_with_rules(user_data, orig_text)
-            
             user_cap = user_data.get('caption', '')
             ft = f'{proc_text}\n\n{user_cap}' if proc_text and user_cap else user_cap if user_cap else proc_text
             
@@ -302,21 +294,20 @@ async def process_msg(c, u, m, d, lt, uid, i):
                 return 'Failed.'
             
             await c.edit_message_text(d, p.id, 'Renaming...')
-            if file_name: # যদি মূল ফাইলের নাম থাকে তবেই রিনেম চেষ্টা করা
+            if file_name: 
                 f = await rename_file(f, d, p)
             
             fsize_bytes = os.path.getsize(f)
             fsize_gb = fsize_bytes / (1024 * 1024 * 1024)
             
-            # --- উন্নত ফিচার: ৪জিবি সাপোর্ট (devgaganin লজিক) ---
-            if fsize_gb > 2 and Y: # Y হলো userbot
+            if fsize_gb > 2 and Y: 
                 st = time.time()
                 await c.edit_message_text(d, p.id, 'File is larger than 2GB. Using Userbot...')
                 await upd_dlg(Y)
                 
-                mtd = video_metadata(f)
+                mtd = await video_metadata(f) # func.py থেকে ইম্পোর্ট করা
                 dur, h, w = mtd['duration'], mtd['height'], mtd['width']
-                th = await get_thumbnail(user_data, f, dur, d) # কাস্টম থাম্বনেইল চেক
+                th = await get_thumbnail(user_data, f, dur, d)
                 
                 sent = None
                 try:
@@ -328,7 +319,7 @@ async def process_msg(c, u, m, d, lt, uid, i):
                          sent = await Y.send_audio(LOG_GROUP, f, thumb=th, caption=ft,
                                                  duration=dur,
                                                  reply_to_message_id=rtmid, progress=prog, progress_args=(c, d, p.id, st))
-                    else: # ডকুমেন্ট হিসেবে পাঠানো
+                    else: 
                         sent = await Y.send_document(LOG_GROUP, f, thumb=th, caption=ft,
                                                     reply_to_message_id=rtmid, progress=prog, progress_args=(c, d, p.id, st))
                     
@@ -350,11 +341,9 @@ async def process_msg(c, u, m, d, lt, uid, i):
                 
                 return 'Done (Large file via Userbot).'
             
-            # --- ২জিবির কম ফাইলের জন্য সাধারণ আপলোড ---
-            
             await c.edit_message_text(d, p.id, 'Uploading...')
             st = time.time()
-            th = None # রিসেট
+            th = None 
 
             try:
                 video_extensions = ['.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.3gp', '.ogv']
@@ -362,9 +351,9 @@ async def process_msg(c, u, m, d, lt, uid, i):
                 file_ext = os.path.splitext(f)[1].lower() if f else ""
 
                 if m.video or (m.document and file_ext in video_extensions):
-                    mtd = video_metadata(f) 
+                    mtd = await video_metadata(f) # func.py থেকে ইম্পোর্ট করা
                     dur, h, w = mtd['duration'], mtd['height'], mtd['width']
-                    th = await get_thumbnail(user_data, f, dur, d) # কাস্টম থাম্বনেইল চেক
+                    th = await get_thumbnail(user_data, f, dur, d)
                     await c.send_video(tcid, video=f, caption=ft, 
                                     thumb=th, width=w, height=h, duration=dur, 
                                     progress=prog, progress_args=(c, d, p.id, st), 
@@ -378,7 +367,6 @@ async def process_msg(c, u, m, d, lt, uid, i):
                 elif m.sticker:
                     await c.send_sticker(tcid, m.sticker.file_id, reply_to_message_id=rtmid)
                 elif m.audio or (m.document and file_ext in audio_extensions):
-                    # অডিওর জন্য কাস্টম থাম্বনেইল
                     th = user_data.get('thumb') if user_data.get('thumb') and os.path.exists(user_data.get('thumb')) else None
                     await c.send_audio(tcid, audio=f, caption=ft, 
                                     thumb=th, progress=prog, progress_args=(c, d, p.id, st), 
@@ -388,7 +376,6 @@ async def process_msg(c, u, m, d, lt, uid, i):
                                     progress=prog, progress_args=(c, d, p.id, st), 
                                     reply_to_message_id=rtmid)
                 elif m.document:
-                    # ডকুমেন্টের জন্য কাস্টম থাম্বনেইল
                     th = user_data.get('thumb') if user_data.get('thumb') and os.path.exists(user_data.get('thumb')) else None
                     await c.send_document(tcid, document=f, caption=ft, thumb=th,
                                         progress=prog, progress_args=(c, d, p.id, st), 
@@ -415,230 +402,5 @@ async def process_msg(c, u, m, d, lt, uid, i):
     except Exception as e:
         print(f"Process_msg Error: {e}")
         return f'Error: {str(e)[:50]}'
-
-
-# --- tawhid120 (original_func.py) থেকে আনা হেল্পার ফাংশন ---
-# (কিছু ফাংশন process_msg-এর জন্য জরুরি, বাকিগুলো সম্পূর্ণতার জন্য রাখা হলো)
-
-async def chk_user(message, user_id):
-    return 0 # প্রিমিয়াম চেক আপাতত বাইপাস করা হলো
-
-async def gen_link(app,chat_id):
-   link = await app.export_chat_invite_link(chat_id)
-   return link
-
-async def subscribe(app, message):
-   update_channel = CHANNEL_ID
-   if not update_channel:
-       return 0 # চ্যানেল সেট করা না থাকলে বাইপাস
-       
-   url = await gen_link(app, update_channel)
-   if update_channel:
-      try:
-         user = await app.get_chat_member(update_channel, message.from_user.id)
-         if user.status == enums.ChatMemberStatus.KICKED: # enums ব্যবহার
-            await message.reply_text("You are Banned. Contact -- @safe_repo")
-            return 1
-      except UserNotParticipant:
-         await message.reply_photo(photo="https://graph.org/file/d44f024a08ded19452152.jpg",caption=script.FORCE_MSG.format(message.from_user.mention), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Join Now...", url=f"{url}")]]))
-         return 1
-      except Exception as e:
-         print(e)
-         await message.reply_text("Something Went Wrong. Contact us @safe_repo...")
-         return 1
-   return 0
-
-
-async def get_seconds(time_string: str) -> int:
-    def extract_value_and_unit(ts):
-        value = ""
-        unit = ""
-        index = 0
-        while index < len(ts) and ts[index].isdigit():
-            value += ts[index]
-            index += 1
-        unit = ts[index:].lstrip()
-        if value:
-            value = int(value)
-        return value, unit
-
-    value, unit = extract_value_and_unit(time_string)
-
-    if unit == 's': return value
-    elif unit == 'min': return value * 60
-    elif unit == 'hour': return value * 3600
-    elif unit == 'day': return value * 86400
-    elif unit == 'month': return value * 86400 * 30
-    elif unit == 'year': return value * 86400 * 365
-    else: return 0
-
-PROGRESS_BAR = """\n
-**__Completed__** : {1}/{2}
-**__Bytes__** : {0}%
-**__Speed__** : {3}/s
-**__Time__** : {4}
-"""
-
-async def progress_bar(current, total, ud_type, message, start):
-    if total == 0: return
-    now = time.time()
-    diff = now - start
-    if round(diff % 10.00) == 0 or current == total:
-        percentage = current * 100 / total
-        speed = current / diff if diff > 0 else 0
-        elapsed_time = round(diff) * 1000
-        time_to_completion = round((total - current) / speed) * 1000 if speed > 0 else 0
-        estimated_total_time = elapsed_time + time_to_completion
-
-        elapsed_time_str = TimeFormatter(milliseconds=elapsed_time)
-        estimated_total_time_str = TimeFormatter(milliseconds=estimated_total_time)
-
-        progress = "{0}{1}".format(
-            ''.join(["🟢" for i in range(math.floor(percentage / 10))]),
-            ''.join(["🔴" for i in range(10 - math.floor(percentage / 10))]))
-            
-        tmp = progress + PROGRESS_BAR.format( 
-            round(percentage, 2),
-            humanbytes(current),
-            humanbytes(total),
-            humanbytes(speed),
-            estimated_total_time_str if estimated_total_time_str != '' else "0 s"
-        )
-        try:
-            await message.edit(
-                text="{}\n\n{}".format(ud_type, tmp),)             
-        except:
-            pass
-
-def humanbytes(size: int) -> str:
-    if not size: return ""
-    power = 2**10
-    n = 0
-    Dic_powerN = {0: ' ', 1: 'K', 2: 'M', 3: 'G', 4: 'T'}
-    while size > power:
-        size /= power
-        n += 1
-    return str(round(size, 2)) + " " + Dic_powerN[n] + 'B'
-
-def TimeFormatter(milliseconds: int) -> str:
-    seconds, milliseconds = divmod(int(milliseconds), 1000)
-    minutes, seconds = divmod(seconds, 60)
-    hours, minutes = divmod(minutes, 60)
-    days, hours = divmod(hours, 24)
-    tmp = ((str(days) + "d, ") if days else "") + \
-        ((str(hours) + "h, ") if hours else "") + \
-        ((str(minutes) + "m, ") if minutes else "") + \
-        ((str(seconds) + "s, ") if seconds else "") + \
-        ((str(milliseconds) + "ms, ") if milliseconds else "")
-    return tmp[:-2] 
-
-def convert(seconds: int) -> str:
-    seconds = seconds % (24 * 3600)
-    hour = seconds // 3600
-    seconds %= 3600
-    minutes = seconds // 60
-    seconds %= 60      
-    return "%d:%02d:%02d" % (hour, minutes, seconds)
-
-async def userbot_join(userbot, invite_link: str) -> str:
-    try:
-        await userbot.join_chat(invite_link)
-        return "Successfully joined the Channel"
-    except UserAlreadyParticipant:
-        return "User is already a participant."
-    except (InviteHashInvalid, InviteHashExpired):
-        return "Could not join. Maybe your link is expired or Invalid."
-    except FloodWait as e:
-        return f"Too many requests, try again after {e.value} seconds."
-    except Exception as e:
-        print(e)
-        return "Could not join, try joining manually."
-
-def get_link(string: str) -> Optional[str]:
-    regex = r"(?i)\b((?:https?://|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}/)(?:[^\s()<>]+|\(([^\s()<>]+|(\([^\s()<>]+\)))*\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]{};:'\".,<>?«»“”‘’]))"
-    url = re.findall(regex,string)   
-    try:
-        link = [x[0] for x in url][0]
-        if link:
-            return link
-        else:
-            return None
-    except Exception:
-        return None
-
-def video_metadata(file: str) -> dict:
-    """
-    ভিডিও ফাইলের মেটাডেটা (duration, width, height) বের করে।
-    """
-    default_values = {'width': 0, 'height': 0, 'duration': 0}
-    try:
-        vcap = cv2.VideoCapture(file)
-        if not vcap.isOpened():
-            return default_values
-
-        width = round(vcap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = round(vcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        fps = vcap.get(cv2.CAP_PROP_FPS)
-        frame_count = vcap.get(cv2.CAP_PROP_FRAME_COUNT)
-
-        if fps > 0 and frame_count > 0:
-            duration = round(frame_count / fps)
-        else:
-            duration = 0 # ডিফল্ট
-
-        vcap.release()
-        
-        # যদি কোনো কারণে 0 ভ্যালু আসে, সেগুলোকে 1 দিয়ে রিপ্লেস করা (আপলোড ফেইল এড়াতে)
-        return {
-            'width': width if width > 0 else 1, 
-            'height': height if height > 0 else 1, 
-            'duration': duration if duration > 0 else 1
-        }
-
-    except Exception as e:
-        print(f"Error in video_metadata: {e}")
-        return {'width': 1, 'height': 1, 'duration': 1} # ফেইল করলে ডিফল্ট
-    
-def hhmmss(seconds: int) -> str:
-    """
-    সেকেন্ডকে H:M:S ফরম্যাটে রূপান্তর করে।
-    """
-    return time.strftime('%H:%M:%S', time.gmtime(seconds))
-
-async def screenshot(video: str, duration: int, sender: int) -> Optional[str]:
-    """
-    ভিডিও থেকে স্ক্রিনশট নেয়।
-    """
-    thumb_path = f'{sender}.jpg'
-    if os.path.exists(thumb_path):
-        try: os.remove(thumb_path) # পুরানো থাম্বনেইল ডিলেট করা
-        except: pass
-
-    # সময়কে ০ এর বেশি হতে বাধ্য করা
-    ss_time = max(0.1, int(duration) / 2)
-    time_stamp = hhmmss(ss_time)
-    
-    out = dt.now().isoformat("_", "seconds") + ".jpg"
-    cmd = ["ffmpeg",
-           "-ss", f"{time_stamp}", 
-           "-i", f"{video}",
-           "-frames:v", "1", 
-           f"{out}",
-           "-y"
-          ]
-    process = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
-    stdout, stderr = await process.communicate()
-    x = stderr.decode().strip()
-    y = stdout.decode().strip()
-    
-    if os.path.isfile(out):
-        return out
-    else:
-        print(f"Screenshot failed: {x} {y}")
-        return None
 
 
