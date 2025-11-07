@@ -98,6 +98,34 @@ async def remove_session(user_id):
 async def remove_channel(user_id):
     await db.update_one({"_id": user_id}, {"$set": {"chat_id": None}})
 
+# ---- ADD THESE FUNCTIONS ----
+
+async def set_delete_words(user_id, words_list):
+    """Set delete words for file/caption processing"""
+    data = await get_data(user_id)
+    if data and data.get("_id"):
+        await db.update_one({"_id": user_id}, {"$set": {"delete_words": words_list}})
+    else:
+        await db.insert_one({"_id": user_id, "delete_words": words_list})
+
+
+async def set_replacement_words(user_id, replacements_dict):
+    """Set replacement word mappings"""
+    data = await get_data(user_id)
+    if data and data.get("_id"):
+        await db.update_one({"_id": user_id}, {"$set": {"replacement_words": replacements_dict}})
+    else:
+        await db.insert_one({"_id": user_id, "replacement_words": replacements_dict})
+
+
+async def set_rename_tag(user_id, tag):
+    """Set custom rename tag"""
+    data = await get_data(user_id)
+    if data and data.get("_id"):
+        await db.update_one({"_id": user_id}, {"$set": {"rename_tag": tag}})
+    else:
+        await db.insert_one({"_id": user_id, "rename_tag": tag})
+        
 async def delete_session(user_id):
     """Delete the session associated with the given user_id from the database."""
     await db.update_one({"_id": user_id}, {"$unset": {"session": ""}})
