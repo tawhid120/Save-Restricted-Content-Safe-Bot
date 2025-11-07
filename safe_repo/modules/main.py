@@ -6,11 +6,12 @@ from pyrogram import filters, Client
 from safe_repo import app
 from config import API_ID, API_HASH
 # এখানে 'process_msg' ইম্পোর্ট করা হয়েছে
-from safe_repo.core.get_func import get_msg, process_msg
-from safe_repo.core.func import *
+from safe_repo.core.get_func import get_msg, process_msg # এটি ঠিক আছে
+from safe_repo.core.func import * # এটিও ঠিক আছে
 from safe_repo.core.mongo import db
 from pyrogram.errors import FloodWait
 
+# ... আপনার বাকি কোড (যেমনে আছে) ...
 
 
 @app.on_message(filters.regex(r'https?://[^\s]+'))
