@@ -5,7 +5,8 @@ import asyncio
 from pyrogram import filters, Client
 from safe_repo import app
 from config import API_ID, API_HASH
-from safe_repo.core.get_func import get_msg
+# এখানে 'process_msg' ইম্পোর্ট করা হয়েছে
+from safe_repo.core.get_func import get_msg, process_msg
 from safe_repo.core.func import *
 from safe_repo.core.mongo import db
 from pyrogram.errors import FloodWait
@@ -55,7 +56,29 @@ async def single_link(_, message):
                 return
                                         
             if 't.me/' in link:
-                await get_msg(userbot, user_id, msg.id, link, 0, message)
+                # --- পুরোনো কোড প্রতিস্থাপিত ---
+                
+                # 'E' এবং 'get_link' উপরে func.* থেকে ইম্পোর্ট করা হয়েছে
+                # 'get_msg' এবং 'process_msg' উপরে get_func থেকে ইম্পোর্ট করা হয়েছে
+                # 'app' উপরে safe_repo থেকে ইম্পোর্ট করা হয়েছে
+
+                chat_id, msg_id, link_type = E(link)
+
+                if not chat_id:
+                    await msg.edit_text("লিঙ্কটি ভুল।")
+                    return
+
+                # নতুন get_msg কল করা
+                fetched_msg = await get_msg(app, userbot, chat_id, msg_id, link_type)
+
+                if fetched_msg:
+                    # নতুন process_msg কল করা
+                    await process_msg(app, userbot, fetched_msg, str(user_id), link_type, user_id, chat_id)
+                    await msg.delete() # সফল হলে প্রসেসিং মেসেজ ডিলিট করুন
+                else:
+                    await msg.edit_text("মেসেজ পাওয়া যায়নি।")
+                # --- নতুন কোড শেষ ---
+
         except Exception as e:
             await msg.edit_text(f"Link: `{link}`\n\n**Error:** {str(e)}")
                     
@@ -113,13 +136,32 @@ async def batch_link(_, message):
                         result = '/'.join(y)
                         url = f"{result}/{i}"
                         link = get_link(url)
-                        await get_msg(userbot, user_id, msg.id, link, 0, message)
+                        
+                        # --- পুরোনো কোড প্রতিস্থাপিত ---
+                        chat_id, msg_id, link_type = E(link)
+
+                        if not chat_id:
+                            await msg.edit_text(f"লিঙ্কটি ভুল: {link}")
+                            continue # পরবর্তী লিঙ্কে যান
+
+                        # নতুন get_msg কল করা
+                        fetched_msg = await get_msg(app, userbot, chat_id, msg_id, link_type)
+
+                        if fetched_msg:
+                            # নতুন process_msg কল করা
+                            await process_msg(app, userbot, fetched_msg, str(user_id), link_type, user_id, chat_id)
+                            await msg.delete() # সফল হলে প্রসেসিং মেসেজ ডিলিট করুন
+                        else:
+                            await msg.edit_text(f"মেসেজ পাওয়া যায়নি: {link}")
+                        # --- নতুন কোড শেষ ---
+
                         sleep_msg = await app.send_message(message.chat.id, "Sleeping for 10 seconds to avoid flood...")
                         await asyncio.sleep(8)
                         await sleep_msg.delete()
                         await asyncio.sleep(2)                                                
                     except Exception as e:
                         print(f"Error processing link {url}: {e}")
+                        await msg.edit_text(f"Error processing link {url}: {e}")
                         continue
                 else:
                     break
@@ -140,4 +182,3 @@ async def stop_batch(_, message):
         await app.send_message(message.chat.id, "Batch processing stopped.")
     else:
         await app.send_message(message.chat.id, "No active batch processing to stop.")
-
