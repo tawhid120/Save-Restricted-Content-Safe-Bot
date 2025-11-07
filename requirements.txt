@@ -13,3 +13,7 @@ PyPDF2
 reportlab
 PyMuPDF
 cryptg
+opencv-python-headless
+Pillow
+mutagen
+cryptography
