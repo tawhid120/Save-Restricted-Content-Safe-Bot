@@ -196,24 +196,3 @@ async def stop_batch(_, message):
         await app.send_message(message.chat.id, "Batch processing stopped.")
     else:
         await app.send_message(message.chat.id, "No active batch to stop.")
-```
-
----
-
-## **Testing Steps:**
-
-1. **Test public channel:**
-```
-   https://t.me/examplechannel/123
-```
-
-2. **Test private channel (after /login):**
-```
-   https://t.me/c/1234567890/456
-```
-
-3. **Test batch:**
-```
-   /batch
-   [Send start link: https://t.me/examplechannel/1]
-   [Send end link: https://t.me/examplechannel/10]
