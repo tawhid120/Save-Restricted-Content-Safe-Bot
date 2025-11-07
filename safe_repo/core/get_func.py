@@ -17,7 +17,7 @@ from safe_repo.core.mongo import db
 # --- func.py থেকে হেল্পার ফাংশন ইম্পোর্ট করা ---
 from safe_repo.core.func import (
     rename_file,
-    video_metadata,
+    get_video_metadata as video_metadata, # <--- এখানে পরিবর্তন করা হয়েছে
     screenshot,
     hhmmss,
     humanbytes,
@@ -29,7 +29,7 @@ try:
     from safe_repo import userbot as Y
 except ImportError:
     Y = None # যদি userbot সেটআপ করা না থাকে
-
+# ... বাকি কোড অপরিবর্তিত
 # devgaganin (batch.py) থেকে আনা গ্লোবাল ভেরিয়েবল
 P = {}
 emp = {}
