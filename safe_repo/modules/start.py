@@ -45,3 +45,55 @@ async def start_command(client, message):
     )
     
     await message.reply(welcome_text, reply_markup=buttons)
+
+@app.on_message(filters.command("help") & filters.private & ~filters.me)
+async def help_command(client, message):
+    help_text = (
+        "📚 **Help & Commands Guide**\n\n"
+        "**🔐 Login:**\n"
+        "`/login` - Login with your phone number\n"
+        "`/logout` - Remove your session\n\n"
+        "**⚙️ Settings:**\n"
+        "`/settings` - Configure bot preferences\n"
+        "• Set custom caption\n"
+        "• Set custom thumbnail\n"
+        "• Set rename tag\n"
+        "• Manage delete/replace words\n\n"
+        "**📥 Download:**\n"
+        "• Send any public channel/group link\n"
+        "• Batch format: `https://t.me/channel/100-110`\n"
+        "• Use `/cancel` to stop batch process\n\n"
+        "**👤 Account:**\n"
+        "`/myplan` - Check your premium status\n\n"
+        "**📖 Examples:**\n"
+        "**Single:** `https://t.me/channel/123`\n"
+        "**Batch:** `https://t.me/channel/100-110`\n\n"
+        "❓ **Need support?** Contact @safe_repo"
+    )
+    
+    buttons = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⚙️ Settings", callback_data="settings")],
+        [InlineKeyboardButton("🔙 Back", callback_data="start")]
+    ])
+    
+    await message.reply(help_text, reply_markup=buttons)
+
+@app.on_message(filters.command("batch_download") & filters.private & ~filters.me)
+async def batch_command(client, message):
+    batch_help_text = (
+        "📦 **Batch Download Guide**\n\n"
+        "To save multiple posts at once, use the **range format**:\n\n"
+        "**Format:**\n"
+        "`https://t.me/channel_username/START_ID-END_ID`\n\n"
+        "**Examples:**\n"
+        "✅ `https://t.me/example/1001-1010` (10 posts)\n"
+        "✅ `https://t.me/example/500-600` (100 posts)\n\n"
+        "📌 **Rules:**\n"
+        "• Maximum **100 posts** per batch\n"
+        "• Only **public** channels/groups supported\n"
+        "• Spaces in range are allowed: `101 - 120`\n\n"
+        "🛑 **Stop batch:** Use `/cancel` command\n\n"
+        "💡 **Tip:** Login first using `/login` for faster downloads!"
+    )
+    
+    await message.reply(batch_help_text)
