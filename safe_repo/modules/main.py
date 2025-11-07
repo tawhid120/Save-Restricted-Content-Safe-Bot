@@ -37,7 +37,15 @@ async def single_link(_, message):
             except:
                 return await msg.edit_text("Login expired /login again...")
         else:
-            await msg.edit_text("Login in bot first ...")
+            await msg.edit_text(
+                "**Access Denied!** 🚫\n\n"
+                "It looks like you're not logged in.\n"
+                "To use this feature, please authenticate your account first.\n\n"
+                "**Here's how:**\n"
+                "1. Simply send the /login command.\n"
+                "2. Follow the on-screen instructions to connect your account.\n\n"
+                "It's quick and secure! 🔒"
+            )
             return
 
         try:
