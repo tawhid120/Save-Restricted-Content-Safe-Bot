@@ -348,3 +348,41 @@ async def rename_file(file, sender, edit): # 'sender' হলো user_id
         print(f"Rename error: {e}")
         return file
 
+# ---- ADD THESE AT THE END OF func.py ----
+
+async def process_text_with_rules(user_data: dict, text: str) -> str:
+    """
+    Process caption text by applying delete and replacement rules.
+    """
+    if not text or not user_data:
+        return text
+
+    delete_words = user_data.get('delete_words', [])
+    replacement_words = user_data.get('replacement_words', {})
+
+    # Apply delete words
+    if delete_words:
+        for word in delete_words:
+            text = text.replace(word, "")
+
+    # Apply replacements
+    if replacement_words:
+        for old, new in replacement_words.items():
+            text = text.replace(old, new)
+            
+    # Clean up extra spaces
+    text = ' '.join(text.split())
+    return text
+
+
+async def get_thumbnail_for_video(user_data: dict, video_file: str, duration: int, user_id: int):
+    """
+    Get custom thumbnail or generate one from video.
+    """
+    # Check for custom thumbnail
+    custom_thumb = user_data.get('thumb')
+    if custom_thumb and os.path.exists(custom_thumb):
+        return custom_thumb
+    
+    # Generate thumbnail from video
+    return await screenshot(video_file, duration, user_id)
