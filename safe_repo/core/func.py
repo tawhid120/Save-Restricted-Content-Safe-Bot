@@ -6,7 +6,7 @@ import time , re
 from pyrogram import enums
 from config import CHANNEL_ID, OWNER_ID 
 from safe_repo.core import script
-from safe_repo.core.mongo.plans_db import premium_users
+#from safe_repo.core.mongo.plans_db import premium_users
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 import cv2
 from pyrogram.errors import FloodWait, InviteHashInvalid, InviteHashExpired, UserAlreadyParticipant, UserNotParticipant
@@ -16,12 +16,13 @@ import asyncio, subprocess, re, os, time
 
 
 async def chk_user(message, user_id):
-    user = await premium_users()
-    if user_id in user or user_id in OWNER_ID:
-        return 0
-    else:
-        await message.reply_text("Purchase premium to do the tasks...")
-        return 1
+    return 0
+    #user = await premium_users()
+    #if user_id in user or user_id in OWNER_ID:
+        #return 0
+    #else:
+        #await message.reply_text("Purchase premium to do the tasks...")
+        #return 1
 
 
 
