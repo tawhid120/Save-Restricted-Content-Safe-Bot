@@ -16,7 +16,7 @@ It looks like you're not logged in.
 To use this feature, please authenticate your account first.
 
 **Here's how:**
-1. Simply send the `/login` command.
+1. Simply send the /login command.
 2. Follow the on-screen instructions to connect your account.
 
 **It's quick and secure! 🔒**
