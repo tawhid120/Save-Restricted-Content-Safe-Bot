@@ -13,7 +13,7 @@ I'm designed to help you save and download content from:
 • Bot Messages
 
 📋 **Quick Start Guide:**
-1️⃣ Login using `/login` command
+1️⃣ Login using /login command
 2️⃣ Send any Telegram message link
 3️⃣ Get your content saved instantly!
 
@@ -24,7 +24,7 @@ I'm designed to help you save and download content from:
 • Session management
 • Premium features available
 
-💡 **Tip:** Use `/help` to explore all commands
+💡 **Tip:** Use /help to explore all commands
 
 ✨ **Ready to start saving content?**
 """
@@ -52,8 +52,8 @@ HELP_TXT = """
 📚 **Help & Commands Guide**
 
 🔐 **Authentication:**
-• `/login` - Login with your account session
-• `/logout` - Remove your active session
+• /login - Login with your account session
+• /logout - Remove your active session
 
 ⚙️ **Configuration:**
 • `/settings` - Configure bot preferences
@@ -83,7 +83,7 @@ HELP2_TXT = """
 📌 **FOR PUBLIC/PRIVATE CHANNELS:**
 
 **Step-by-step:**
-1️⃣ Login using `/login`
+1️⃣ Login using /login
 2️⃣ Join the target channel in your logged account
 3️⃣ Send the message link to this bot
 
