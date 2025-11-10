@@ -1,5 +1,4 @@
 pyrofork
-pyromod
 tgcrypto
 opencv-python-headless
 requests
