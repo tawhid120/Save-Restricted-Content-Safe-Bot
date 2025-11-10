@@ -1,8 +1,10 @@
+#safe_repo
+
 from pyrogram import filters, Client
-from safe_repo import app
+from safe_repo import app, USER_CLIENTS # <--- USER_CLIENTS এখানে ইম্পোর্ট করা হয়েছে
+import random
 import os
 import string
-import random
 from safe_repo.core.mongo import db
 from safe_repo.core.func import subscribe, chk_user
 from config import API_ID as api_id, API_HASH as api_hash
@@ -13,19 +15,15 @@ from pyrogram.errors import (
     PhoneCodeExpired,
     SessionPasswordNeeded,
     PasswordHashInvalid,
-    FloodWait,
-    TimeoutError # TimeoutError import করা হয়েছে
+    FloodWait
 )
+from asyncio.exceptions import TimeoutError # <--- TimeoutError ইম্পোর্ট করা হয়েছে
 
-# একটি গ্লোবাল ডিকশনারি যা সক্রিয় ইউজার ক্লায়েন্টদের ধরে রাখবে।
-# ধরে নেওয়া হচ্ছে এটি আপনার 'safe_repo' মডিউল বা গ্লোবাল স্কোপে সংজ্ঞায়িত।
-# যদি এটি অন্য ফাইল থেকে ইমপোর্ট হয়, তবে উপরের import সেকশনে যোগ করুন।
-# আপাতত, এটি এখানে সংজ্ঞায়িত করা হলো:
-USER_CLIENTS = {}
-
+def generate_random_name(length=7):
+    characters = string.ascii_letters + string.digits
+    return ''.join(random.choice(characters) for _ in range(length))  # Editted ... 
 
 async def delete_session_files(user_id):
-    """সেশন ফাইল এবং জার্নাল ফাইল ডিলিট করে এবং ডাটাবেস থেকে সেশন মুছে দেয়।"""
     session_file = f"session_{user_id}.session"
     memory_file = f"session_{user_id}.session-journal"
 
@@ -41,141 +39,122 @@ async def delete_session_files(user_id):
     # Delete session from the database
     if session_file_exists or memory_file_exists:
         await db.delete_session(user_id)
+        return True  # Files were deleted
+    return False  # No files found
+
+@app.on_message(filters.command("logout"))
+async def clear_db(client, message):
+    user_id = message.chat.id
+    
+    # --- সেশন ক্যাশ সমাধান ---
+    # লগআউট করার সময় অ্যাক্টিভ সেশনটি বন্ধ করুন এবং ক্যাশ থেকে ডিলিট করুন
+    if user_id in USER_CLIENTS:
+        try:
+            await USER_CLIENTS[user_id].stop()
+            print(f"Stopped active session for user {user_id}")
+        except Exception as e:
+            print(f"Error stopping client on logout: {e}")
+        del USER_CLIENTS[user_id]
+    # --- সমাধান শেষ ---
+
+    files_deleted = await delete_session_files(user_id)
+    
+    await db.delete_user(user_id)
+    await message.reply('Successfully Logout!')
+
+
+@app.on_message(filters.command("login"))
+async def generate_session(client, message):
+    
+    lol = await chk_user(message, message.chat.id)
+    if lol == 1:
+        return
         
-        # সক্রিয় ক্লায়েন্টকে বন্ধ করুন এবং USER_CLIENTS থেকে মুছে ফেলুন
+    join = await subscribe(client, message)
+    if join == 1:
+        return
+
+    user_id = message.chat.id
+    
+    # সেশন ফাইল ডিলিট করুন (যদি থাকে)
+    await delete_session_files(user_id)
+
+    # একটি নতুন ক্লায়েন্ট তৈরি করুন (শুধু লগইন প্রসেসের জন্য)
+    # Pyrogram সেশন নামটি 랜덤 হওয়া ভালো
+    session_name = generate_random_name()
+    try:
+        client = Client(session_name, api_id=api_id, api_hash=api_hash, in_memory=True)
+    except Exception as e:
+        await message.reply(f"Error starting client: {e}")
+        return
+
+    try:
+        await client.connect()
+        phone_number_msg = await app.ask(user_id, "Please send your phone number with country code (e.g., +19876543210):", filters=filters.text, timeout=600)
+        phone_number = phone_number_msg.text
+        
+        try:
+            code = await client.send_code(phone_number)
+        except FloodWait as fw:
+            await message.reply(f"Flood wait: Please wait {fw.value} seconds before trying again.")
+            return
+        except (ApiIdInvalid, PhoneNumberInvalid) as e:
+            await message.reply(f"Error: {e}. Please check your input and try again.")
+            return
+
+        try:
+            otp_code = await app.ask(user_id, "We have sent an OTP to your official Telegram account. Once received, enter the OTP in the following format: \nIf the OTP is `12345`, please enter it as `1 2 3 4 5`.", filters=filters.text, timeout=600)
+        except TimeoutError:
+            await message.reply('⏰ Time limit of 10 minutes exceeded. Please restart the session.')
+            return
+        
+        phone_code = otp_code.text.replace(" ", "")
+        
+        try:
+            await client.sign_in(phone_number, code.phone_code_hash, phone_code)
+                    
+        except PhoneCodeInvalid:
+            await message.reply('❌ Invalid OTP. Please restart the session.')
+            return
+        except PhoneCodeExpired:
+            await message.reply('❌ Expired OTP. Please restart the session.')
+            return
+        except SessionPasswordNeeded:
+            try:
+                two_step_msg = await app.ask(user_id, 'Your account has two-step verification enabled. Please enter your password.', filters=filters.text, timeout=300)
+            except TimeoutError:
+                await message.reply('⏰ Time limit of 5 minutes exceeded. Please restart the session.')
+                return
+            try:
+                password = two_step_msg.text
+                await client.check_password(password=password)
+            except PasswordHashInvalid:
+                await two_step_msg.reply('❌ Invalid password. Please restart the session.')
+                return
+
+        # --- সেশন ক্যাশ সমাধান ---
+        # সেশনটি চালু রাখুন এবং ক্যাশে সেভ করুন
+        
+        string_session = await client.export_session_string()
+        await db.set_session(user_id, string_session)
+        
+        # যদি এই ইউজার আগে লগইন করে থাকে, তার পুরনো সেশন বন্ধ করুন
         if user_id in USER_CLIENTS:
             try:
                 await USER_CLIENTS[user_id].stop()
             except Exception:
                 pass
-            del USER_CLIENTS[user_id]
-            
-        return True # Files were deleted
-    return False # No files found
-
-@app.on_message(filters.command("logout"))
-async def clear_db(client, message):
-    user_id = message.chat.id
-    files_deleted = await delete_session_files(user_id)
-
-    if files_deleted:
-        await message.reply("✅ আপনার সেশন ডেটা এবং ফাইলগুলি মেমরি এবং ডিস্ক থেকে সাফ করা হয়েছে। আপনি এখন লগ আউট করেছেন।")
-    else:
-        await message.reply("⚠️ আপনি লগ ইন করেননি, কোনো সেশন ডেটা পাওয়া যায়নি।")
+                
+        USER_CLIENTS[user_id] = client  # নতুন অ্যাক্টিভ সেশনটি ক্যাশে সেভ করুন
+        # await client.disconnect() <-- সেশন চালু রাখার জন্য এই লাইনটি ডিলিট করা হয়েছে
         
-@app.on_message(filters.command("login"))
-async def generate_session(_, message):
-    user_id = message.chat.id
-    client = None # ক্লায়েন্ট অবজেক্টকে আগে থেকেই ইনিশিয়ালাইজ করা হলো
+        await otp_code.reply("✅ Login successful! Your session is now active.")
+        # --- সমাধান শেষ ---
 
-    # সাবস্ক্রিপশন চেক
-    joined = await subscribe(_, message)
-    if joined == 1:
-        return
-    
-    # যদি ক্লায়েন্ট ইতিমধ্যেই সক্রিয় থাকে, তার পুরনো সেশন বন্ধ করুন (আপনার নতুন কোডের লজিক)
-    if user_id in USER_CLIENTS:
-        try:
-            await USER_CLIENTS[user_id].stop()
-        except Exception:
-            pass
-        del USER_CLIENTS[user_id]
-
-    try:
-        # ১. ফোন নম্বর ইনপুট
-        number_msg = await _.ask(user_id, 'অনুগ্রহ করে আপনার কান্ট্রি কোড সহ ফোন নম্বরটি দিন। \nউদাহরণ: +19876543210', filters=filters.text, timeout=300)
-        phone_number = number_msg.text.strip()
-
-        await message.reply("📲 OTP পাঠানো হচ্ছে...")
-        
-        # ক্লায়েন্ট তৈরি করা
-        client = Client(f"session_{user_id}", api_id, api_hash)
-        
-        # ২. OTP কোড পাঠানো
-        try:
-            # client.send_code() স্বয়ংক্রিয়ভাবে connect() করে নেয়
-            code = await client.send_code(phone_number)
-        except ApiIdInvalid:
-            await message.reply('❌ API ID এবং API HASH এর ভুল কম্বিনেশন। অনুগ্রহ করে সেশনটি পুনরায় শুরু করুন।')
-            await client.stop()
-            return
-        except PhoneNumberInvalid:
-            await message.reply('❌ ভুল ফোন নম্বর। অনুগ্রহ করে সেশনটি পুনরায় শুরু করুন।')
-            await client.stop()
-            return
-        except FloodWait as e:
-            await message.reply(f'⚠️ ফ্লাড অপেক্ষা: অনুগ্রহ করে {e.value} সেকেন্ড পরে আবার চেষ্টা করুন।')
-            await client.stop()
-            return
-        
-        # ৩. OTP ইনপুট
-        otp_msg = await _.ask(user_id, "অনুগ্রহ করে আপনার অফিসিয়াল টেলিগ্রাম অ্যাকাউন্টে আসা OTP টি চেক করুন। OTP পেলে, এটি নিম্নলিখিত ফরম্যাটে প্রবেশ করুন: \nযদি OTP `12345` হয়, তবে `1 2 3 4 5` হিসাবে প্রবেশ করুন।", filters=filters.text, timeout=600)
-        
-        phone_code = otp_msg.text.replace(" ", "")
-
-        # ৪. সাইন ইন
-        await client.sign_in(phone_number, code.phone_code_hash, phone_code)
-            
     except TimeoutError:
-        # ask() ফাংশন টাইম আউট হলে
-        await message.reply('⏰ সময়সীমা (টাইম আউট) পেরিয়ে গেছে। অনুগ্রহ করে সেশনটি পুনরায় শুরু করুন।')
-        if client:
-            await client.stop()
-        return
-    except PhoneCodeInvalid:
-        await message.reply('❌ ভুল OTP। অনুগ্রহ করে সেশনটি পুনরায় শুরু করুন।')
-        if client:
-            await client.stop()
-        return
-    except PhoneCodeExpired:
-        await message.reply('❌ OTP এর মেয়াদ উত্তীর্ণ হয়েছে। অনুগ্রহ করে সেশনটি পুনরায় শুরু করুন।')
-        if client:
-            await client.stop()
-        return
-    except SessionPasswordNeeded:
-        # ৫. দুই-ধাপ যাচাইকরণের জন্য পাসওয়ার্ড
-        try:
-            two_step_msg = await _.ask(user_id, 'আপনার অ্যাকাউন্টে দুই-ধাপ যাচাইকরণ (2FA) সক্ষম করা আছে। অনুগ্রহ করে আপনার পাসওয়ার্ড দিন।', filters=filters.text, timeout=300)
-        except TimeoutError:
-            await message.reply('⏰ সময়সীমা (টাইম আউট) পেরিয়ে গেছে। অনুগ্রহ করে সেশনটি পুনরায় শুরু করুন।')
-            if client:
-                await client.stop()
-            return
-        
-        try:
-            password = two_step_msg.text
-            await client.check_password(password=password)
-        except PasswordHashInvalid:
-            await two_step_msg.reply('❌ ভুল পাসওয়ার্ড। অনুগ্রহ করে সেশনটি পুনরায় শুরু করুন।')
-            if client:
-                await client.stop()
-            return
-        except Exception as e:
-            await message.reply(f"❌ পাসওয়ার্ড চেক করতে সমস্যা হয়েছে: {e}")
-            if client:
-                await client.stop()
-            return
+        await message.reply('⏰ Time limit of 10 minutes exceeded. Please restart the session.')
     except Exception as e:
-        # অন্যান্য অপ্রত্যাশিত ত্রুটি
-        await message.reply(f"❌ একটি অপ্রত্যাশিত ত্রুটি ঘটেছে: {e}")
-        if client:
-            await client.stop()
-        return
-
-    
-    # --- সাফল্যের পর কাজগুলো ---
-    try:
-        # সেশন স্ট্রিং এক্সপোর্ট এবং ডাটাবেসে সেভ
-        string_session = await client.export_session_string()
-        await db.set_session(user_id, string_session)
-
-        # ক্লায়েন্টটি বন্ধ না করে সক্রিয় ক্লায়েন্ট ক্যাশে যোগ করুন
-        USER_CLIENTS[user_id] = client
-
-        # সফল বার্তা
-        await message.reply("✅ লগইন সফল! আপনার সেশন এখন সক্রিয় আছে।")
-
-    except Exception as e:
-        await message.reply(f"❌ সেশন সংরক্ষণ বা ক্লায়েন্ট সেটআপে সমস্যা: {e}")
-        if client:
-            await client.stop()
+        await message.reply(f'An error occurred: {e}')
+        # যদি কোনো এরর হয়, তাহলে ক্লায়েন্ট ডিসকানেক্ট করুন
+        if client.is_connected:
+            await client.disconnect()
