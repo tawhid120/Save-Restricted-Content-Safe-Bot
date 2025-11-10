@@ -16,6 +16,9 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # ধাপ ৩: পাইথন প্যাকেজ ইনস্টল করুন (সঠিকভাবে)
+# ধাপ ৩: পাইথন প্যাকেজ ইনস্টল করুন
+RUN pip3 install wheel
+COPY requirements.txt .
 RUN pip3 install --no-cache-dir -U -r requirements.txt
 
 # ধাপ ৪: আপনার অ্যাপ কোড কপি করুন
