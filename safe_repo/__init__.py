@@ -5,7 +5,6 @@ import asyncio
 import logging
 from pyrogram import Client
 from config import API_ID, API_HASH, BOT_TOKEN
-from telethon.sync import TelegramClient
 
 
 loop = asyncio.get_event_loop()
