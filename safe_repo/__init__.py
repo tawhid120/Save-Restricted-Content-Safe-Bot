@@ -6,6 +6,7 @@ import logging
 from pyrogram import Client
 from config import API_ID, API_HASH, BOT_TOKEN
 
+USER_CLIENTS = {}  # <-- এই লাইনটি যোগ করুন (এটিই আমাদের ক্যাশ)
 
 loop = asyncio.get_event_loop()
 
