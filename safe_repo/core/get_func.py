@@ -5,8 +5,8 @@ import os
 import subprocess
 import requests
 from safe_repo import app
-from safe_repo import sex as gf
 import pymongo
+from pyrogram.types import InlineKeyboardButton, CallbackQuery
 from pyrogram import filters
 from pyrogram.errors import (
     ChannelBanned, ChannelInvalid, ChannelPrivate, ChatIdInvalid, 
@@ -18,7 +18,6 @@ from safe_repo.core.mongo import db as mongo_db_core
 from pyrogram.types import Message
 from config import MONGO_DB as MONGODB_CONNECTION_STRING, LOG_GROUP
 import cv2
-from telethon import events, Button
 import re
 from pyrogram.types import messages_and_media
 
