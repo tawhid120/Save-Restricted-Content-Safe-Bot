@@ -14,7 +14,6 @@ logging.basicConfig(
     level=logging.INFO,
 )
 
-sex = TelegramClient('sexrepo', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
 app = Client(
     ":RestrictBot:",
