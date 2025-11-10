@@ -15,15 +15,10 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# ধাপ ৩: পাইথন প্যাকেজ ইনস্টল করুন এবং কনফ্লিক্ট ডিলিট করুন
+# ধাপ ৩: পাইথন প্যাকেজ ইনস্টল করুন
 RUN pip3 install wheel
 COPY requirements.txt .
-
-# ১. সবকিছু ইনস্টল করুন (এর ফলে কনফ্লিক্ট তৈরি হবে)
 RUN pip3 install --no-cache-dir -U -r requirements.txt
-
-# ২. আপনার প্ল্যান: কনফ্লিক্ট সৃষ্টিকারী পুরনো pyrogram-কে ডিলিট করুন
-RUN pip3 uninstall pyrogram -y
 
 # ধাপ ৪: আপনার অ্যাপ কোড কপি করুন
 WORKDIR /app
