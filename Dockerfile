@@ -15,21 +15,8 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# ধাপ ৩: পাইথন প্যাকেজ ইনস্টল করুন
-RUN pip3 install wheel
-COPY requirements.txt .
 # ধাপ ৩: পাইথন প্যাকেজ ইনস্টল করুন (সঠিকভাবে)
-RUN pip3 install wheel
-COPY requirements.txt .
-
-# প্রথমে pyrofork এবং pyromod ছাড়া বাকি সব ইনস্টল করুন
-RUN pip3 install --no-cache-dir -U $(grep -vE '^(pyromod|pyrofork)$' requirements.txt)
-
-# এখন pyrofork ইনস্টল করুন (যা pyrogram-কে রিপ্লেস করবে)
-RUN pip3 install --no-cache-dir -U pyrofork
-
-# সবশেষে, pyromod ইনস্টল করুন, কিন্তু তার dependency (পুরনো pyrogram) ইনস্টল করা থেকে বিরত রাখুন
-RUN pip3 install --no-cache-dir -U --no-deps pyromod
+RUN pip3 install --no-cache-dir -U -r requirements.txt
 
 # ধাপ ৪: আপনার অ্যাপ কোড কপি করুন
 WORKDIR /app
