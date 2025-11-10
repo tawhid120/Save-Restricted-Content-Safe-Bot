@@ -3,7 +3,7 @@
 
 from pyrogram import filters, Client
 from safe_repo import app
-from pyromod import listen
+from pyrogram import listen
 import random
 import os
 import string
